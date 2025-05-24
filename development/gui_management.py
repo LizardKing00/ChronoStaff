@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 import calendar
 import json
 from calendar_popup import CalendarDialog
-from database_management2 import DatabaseManager, EmployeeManager, TimeTracker
+from database_management import DatabaseManager, EmployeeManager, TimeTracker
 
 # =============================================================================
 # MAIN APPLICATION GUI
@@ -522,22 +522,23 @@ class EmployeeTimeApp:
         self.report_emp_combo['values'] = emp_names
     
     def add_employee_dialog(self):
-        """Show dialog to add new employee with validation"""
+        """Show dialog to add new employee with strict ID validation"""
         dialog = tk.Toplevel(self.root)
         dialog.title("Add Employee")
         dialog.geometry("400x400")
         dialog.transient(self.root)
         dialog.grab_set()
-        
+
         # Form fields
         ttk.Label(dialog, text="Name:").grid(row=0, column=0, sticky='w', padx=10, pady=5)
         name_var = tk.StringVar()
         ttk.Entry(dialog, textvariable=name_var, width=30).grid(row=0, column=1, padx=10, pady=5)
-        
-        ttk.Label(dialog, text="Employee ID (4 digits):").grid(row=1, column=0, sticky='w', padx=10, pady=5)
+
+        ttk.Label(dialog, text="Employee ID (max 4 digits):").grid(row=1, column=0, sticky='w', padx=10, pady=5)
         id_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=id_var, width=30).grid(row=1, column=1, padx=10, pady=5)
-        
+        id_entry = ttk.Entry(dialog, textvariable=id_var, width=30)
+        id_entry.grid(row=1, column=1, padx=10, pady=5)
+
         ttk.Label(dialog, text="Position:").grid(row=2, column=0, sticky='w', padx=10, pady=5)
         pos_var = tk.StringVar()
         ttk.Entry(dialog, textvariable=pos_var, width=30).grid(row=2, column=1, padx=10, pady=5)
@@ -561,24 +562,27 @@ class EmployeeTimeApp:
         ttk.Label(dialog, text="Sick Days/Year:").grid(row=7, column=0, sticky='w', padx=10, pady=5)
         sick_days_var = tk.IntVar(value=10)
         ttk.Entry(dialog, textvariable=sick_days_var, width=30).grid(row=7, column=1, padx=10, pady=5)
-        
+
         def save_employee():
-            # Validate inputs
-            if not name_var.get():
-                messagebox.showerror("Error", "Name is required!")
+            # Get and validate ID
+            id_input = id_var.get().strip()
+
+            try:
+                # Convert to integer (will raise ValueError if invalid)
+                id_num = int(id_input)
+
+                # Take last 4 digits if longer than 4
+                if id_num > 9999:
+                    id_num = id_num % 10000
+                    messagebox.showwarning("Notice", f"Using last 4 digits: {id_num:04d}")
+
+                employee_id = f"{id_num:04d}"  # Format as 4-digit string
+
+            except ValueError:
+                messagebox.showerror("Error", "ID must be a number (digits only)")
                 return
-                
-            employee_id = id_var.get()
-            
-            # Validate employee ID format (4 digits)
-            if not (employee_id.isdigit() and len(employee_id) == 4):
-                messagebox.showerror("Error", "Employee ID must be a 4-digit number (e.g., '0001', '0313')")
-                return
-                
-            # Pad with leading zeros if necessary (though entry should enforce 4 digits)
-            employee_id = employee_id.zfill(4)
-            
-            # Check if employee ID already exists
+
+            # Check for duplicate ID
             conn = self.db_manager.get_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM employees WHERE employee_id = ?", (employee_id,))
@@ -587,47 +591,127 @@ class EmployeeTimeApp:
                 conn.close()
                 return
             conn.close()
-            
+
+            # Validate name
+            if not name_var.get().strip():
+                messagebox.showerror("Error", "Name is required!")
+                return
+
             # All validations passed - save employee
             success = self.employee_manager.add_employee(
-                name_var.get(), 
-                employee_id,  # Using the validated 4-digit string
-                pos_var.get(), 
-                rate_var.get(), 
-                email_var.get(), 
+                name_var.get().strip(),
+                employee_id,  # Formatted 4-digit string
+                pos_var.get().strip(),
+                rate_var.get(),
+                email_var.get().strip(),
                 hours_per_week_var.get(),
-                vacation_days_var.get(), 
+                vacation_days_var.get(),
                 sick_days_var.get()
             )
-            
+
             if success:
                 self.refresh_employee_list()
                 self.update_employee_combo()
                 dialog.destroy()
-                messagebox.showinfo("Success", "Employee added successfully!")
+                messagebox.showinfo("Success", f"Employee {employee_id} added successfully!")
             else:
-                messagebox.showerror("Error", "Failed to add employee!")
-        
+                messagebox.showerror("Error", "Failed to add employee")
+
         ttk.Button(dialog, text="Save", command=save_employee).grid(row=8, column=0, padx=10, pady=20)
         ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(row=8, column=1, padx=10, pady=20)
-        
-        # Add input validation for the ID field
+
+        # Input validation for ID field
         def validate_id_input(new_val):
-            return new_val.isdigit() and len(new_val) <= 4 or new_val == ""
-        
+            if not new_val:  # Allow empty field (for backspacing)
+                return True
+            return new_val.isdigit()  # Only allow digits
+
         vcmd = (dialog.register(validate_id_input), '%P')
-        id_entry = dialog.children['!entry2']  # Get reference to the ID entry widget
         id_entry.configure(validate='key', validatecommand=vcmd)
 
     def edit_employee_dialog(self):
-        """Show dialog to edit selected employee"""
+        """Show dialog to edit existing employee with proper saving"""
         selection = self.emp_tree.selection()
         if not selection:
             messagebox.showwarning("Warning", "Please select an employee to edit.")
             return
-        
-        # Implementation would be similar to add_employee_dialog but with pre-filled values
-        messagebox.showinfo("Info", "Edit employee functionality to be implemented")
+
+        item = self.emp_tree.item(selection[0])
+        displayed_id = item['values'][0]  # Get displayed employee ID
+
+        # Get full employee data from database
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM employees WHERE employee_id = ?", (displayed_id,))
+        employee = cursor.fetchone()
+        conn.close()
+
+        if not employee:
+            messagebox.showerror("Error", "Selected employee not found in database")
+            return
+
+        # Create dialog window
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Edit Employee {displayed_id}")
+        dialog.geometry("400x450")  # Slightly taller for better spacing
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Form fields with current values - using grid for better layout
+        fields = [
+            ("Name:", tk.StringVar(value=employee[1])),
+            ("Employee ID:", None, displayed_id),  # Display only
+            ("Position:", tk.StringVar(value=employee[3] or "")),
+            ("Hourly Rate:", tk.DoubleVar(value=employee[4] or 0.0)),
+            ("Email:", tk.StringVar(value=employee[5] or "")),
+            ("Hours/Week:", tk.DoubleVar(value=employee[7] if len(employee) > 7 else 40.0)),
+            ("Vacation Days:", tk.IntVar(value=employee[8] if len(employee) > 8 else 20)),
+            ("Sick Days:", tk.IntVar(value=employee[9] if len(employee) > 9 else 10)),
+        ]
+
+        for row, (label, var, *display) in enumerate(fields):
+            ttk.Label(dialog, text=label).grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            if var is not None:
+                ttk.Entry(dialog, textvariable=var, width=30).grid(row=row, column=1, padx=10, pady=5)
+            else:
+                ttk.Label(dialog, text=display[0], foreground='blue').grid(row=row, column=1, sticky='w', padx=10, pady=5)
+
+        def save_changes():
+            # Validate required fields
+            if not fields[0][1].get().strip():  # Name field
+                messagebox.showerror("Error", "Name is required!")
+                return
+
+            # Prepare update data
+            update_data = {
+                'name': fields[0][1].get().strip(),
+                'position': fields[2][1].get().strip(),
+                'hourly_rate': float(fields[3][1].get()),
+                'email': fields[4][1].get().strip(),
+                'hours_per_week': float(fields[5][1].get()),
+                'vacation_days_per_year': int(fields[6][1].get()),
+                'sick_days_per_year': int(fields[7][1].get())
+            }
+
+            # Update employee in database
+            try:
+                success = self.employee_manager.update_employee(employee[0], **update_data)
+                if success:
+                    self.refresh_employee_list()
+                    self.update_employee_combo()
+                    dialog.destroy()
+                    messagebox.showinfo("Success", f"Employee {displayed_id} updated successfully!")
+                else:
+                    messagebox.showerror("Error", "Failed to update employee in database")
+            except Exception as e:
+                messagebox.showerror("Error", f"Database error: {str(e)}")
+
+        # Button frame
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.grid(row=len(fields)+1, column=0, columnspan=2, pady=10)
+
+        ttk.Button(btn_frame, text="Save Changes", command=save_changes).pack(side=tk.LEFT, padx=10)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=10)
     
     def delete_employee(self):
         """Delete selected employee"""

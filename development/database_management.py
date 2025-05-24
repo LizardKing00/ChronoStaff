@@ -141,7 +141,7 @@ class EmployeeManager:
         conn.close()
         return employee
     
-    def update_employee(self, emp_id, **kwargs):
+    def _update_employee(self, emp_id, **kwargs):
         """Update employee information"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
@@ -175,6 +175,27 @@ class EmployeeManager:
         conn.close()
         return False, "No valid fields to update"
     
+    def update_employee(self, emp_id, **kwargs):
+        """Properly update employee information in database"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Build the update query dynamically based on provided kwargs
+            set_clause = ", ".join([f"{key} = ?" for key in kwargs.keys()])
+            values = list(kwargs.values())
+            values.append(emp_id)  # Add emp_id for WHERE clause
+            
+            query = f"UPDATE employees SET {set_clause} WHERE id = ?"
+            cursor.execute(query, values)
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Database error: {e}")
+            return False
+        finally:
+            conn.close()
+
     def remove_employee(self, emp_id, permanent=False):
         """Remove employee (soft delete by default, permanent if specified)"""
         conn = self.db.get_connection()
