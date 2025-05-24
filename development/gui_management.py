@@ -261,7 +261,7 @@ class EmployeeTimeApp:
         time_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
         ttk.Button(time_btn_frame, text="Edit Selected", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
-        ttk.Button(time_btn_frame, text="Delete Selected", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
+        ttk.Button(time_btn_frame, text="Delete Selected", command=self.delete_time_entry).pack(side=tk.LEFT, padx=5)
 
         self.update_employee_combo()
 
@@ -562,6 +562,145 @@ class EmployeeTimeApp:
         except Exception as e:
             print(f"Error in _get_selected_employee_db_id: {str(e)}")
             return None
+
+    def load_time_records(self, employee_id=None, month=None, year=None):
+        """Load time records for the selected employee and period into the Treeview"""
+        # Clear existing records
+        self.time_tree.delete(*self.time_tree.get_children())
+
+        # Use current selection if no parameters provided
+        employee_id = employee_id or self.selected_employee
+        month = month or self.month_var.get()
+        year = year or self.year_var.get()
+
+        if not employee_id:
+            return
+
+        try:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+
+            # Get records for the selected month/year
+            cursor.execute('''
+                SELECT date, hours_worked, overtime_hours, record_type, notes 
+                FROM time_records 
+                WHERE employee_id = ? 
+                AND strftime('%m', date) = ? 
+                AND strftime('%Y', date) = ?
+                ORDER BY date
+            ''', (employee_id, f"{month:02d}", str(year)))
+
+            records = cursor.fetchall()
+
+            # Insert records into the Treeview
+            for record in records:
+                self.time_tree.insert('', 'end', values=(
+                    record[0],  # Date
+                    f"{record[1]:.2f}",  # Hours worked
+                    f"{record[2]:.2f}" if record[2] else "0.00",  # Overtime
+                    record[3].capitalize(),  # Type
+                    record[4]  # Notes
+                ))
+
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Could not load time records: {str(e)}")
+        finally:
+            conn.close()
+
+    def sort_out_time_entries(self):
+        """Check all entries for current employee/month and consolidate duplicates"""
+        if not self.selected_employee:
+            messagebox.showwarning("Warning", "Please select an employee first")
+            return
+
+        try:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+
+            month = self.month_var.get()
+            year = self.year_var.get()
+
+            # Find duplicate dates for selected employee/month
+            cursor.execute('''
+                SELECT date, COUNT(*) as count
+                FROM time_records
+                WHERE employee_id = ?
+                  AND strftime('%m', date) = ?
+                  AND strftime('%Y', date) = ?
+                GROUP BY date
+                HAVING count > 1
+            ''', (
+                self.selected_employee,
+                f"{month:02d}",  # Ensure 2-digit month
+                str(year)
+            ))
+
+            duplicate_dates = cursor.fetchall()
+
+            if not duplicate_dates:
+                return  # Silent return - no duplicates found
+
+            processed_count = 0
+
+            for dup_date, dup_count in duplicate_dates:
+                # Get all entries for this duplicate date sorted by priority
+                cursor.execute('''
+                    SELECT id, hours_worked, overtime_hours, record_type, notes
+                    FROM time_records
+                    WHERE employee_id = ? AND date = ?
+                    ORDER BY CASE record_type
+                        WHEN 'work' THEN 1
+                        WHEN 'holiday' THEN 2
+                        WHEN 'sick' THEN 3
+                        WHEN 'vacation' THEN 4
+                        ELSE 5
+                    END
+                ''', (self.selected_employee, dup_date))
+
+                entries = cursor.fetchall()
+                keep_type = entries[0][3]  # Highest priority type
+
+                # Combine only same-type entries
+                total_hours = sum(e[1] for e in entries if e[3] == keep_type)
+                total_overtime = sum(e[2] for e in entries if e[3] == keep_type)
+                combined_notes = " | ".join(e[4] for e in entries if e[4] and e[3] == keep_type)
+
+                # Delete old entries
+                cursor.execute('''
+                    DELETE FROM time_records
+                    WHERE employee_id = ? AND date = ?
+                ''', (self.selected_employee, dup_date))
+
+                # Insert consolidated entry
+                cursor.execute('''
+                    INSERT INTO time_records
+                    (employee_id, date, hours_worked, overtime_hours, record_type, notes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    self.selected_employee,
+                    dup_date,
+                    total_hours,
+                    total_overtime,
+                    keep_type,
+                    combined_notes
+                ))
+
+                processed_count += 1
+
+            conn.commit()
+
+            if processed_count > 0:
+                messagebox.showinfo(
+                    "Duplicates Consolidated",
+                    f"Processed {processed_count} dates with multiple entries"
+                )
+                self.load_time_records()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to process duplicates: {str(e)}")
+        finally:
+            if 'conn' in locals():
+                conn.close()
 
     # =============================================================================
     # EMPLOYEE MANAGEMENT METHODS
@@ -866,6 +1005,7 @@ class EmployeeTimeApp:
                 if emp[2] == emp_id:  # emp[2] is employee_id
                     self.selected_employee = emp[0]  # emp[0] is database id
                     break
+            self.load_time_records()  
 
     def clear_employee_selection(self):
         """Handle employee selection"""
@@ -884,7 +1024,8 @@ class EmployeeTimeApp:
         # Load and display month data
         records = self.time_tracker.get_monthly_records(self.selected_employee, year, month)
         summary = self.time_tracker.calculate_monthly_summary(self.selected_employee, year, month)
-        
+        self.load_time_records()
+
         # Display summary (implement display logic)
         messagebox.showinfo("Month Summary", 
                           f"Work Hours: {summary['total_work_hours']:.1f} / {summary['hours_per_week']:.1f} per week\n"
@@ -907,15 +1048,91 @@ class EmployeeTimeApp:
             )
             if success:
                 messagebox.showinfo("Success", message)
-                # Clear form
+                self.load_time_records() 
                 self.hours_var.set(0.0)
                 self.notes_var.set("")
+                self.sort_out_time_entries()
+
             else:
                 messagebox.showerror("Error", message)
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid date (YYYY-MM-DD)")
         except AttributeError:
             messagebox.showerror("Error", "Could not find date attribute. Please check the date field.")
+
+    def delete_time_entry(self):
+        """Delete selected time entry from database (single record only)"""
+        selected_items = self.time_tree.selection()
+
+        if not selected_items:
+            messagebox.showwarning("Warning", "Please select a time entry to delete")
+            return
+
+        # Only process the first selected item to ensure single deletion
+        first_selected = selected_items[0]
+
+        try:
+            # Get record details from Treeview
+            item_values = self.time_tree.item(first_selected)['values']
+            if not item_values or len(item_values) < 1:
+                raise ValueError("Invalid record selected")
+
+            record_date = item_values[0]  # First column is date
+            employee_id = self.selected_employee
+
+            # Confirm deletion
+            confirm = messagebox.askyesno(
+                "Confirm Deletion",
+                f"Delete time entry for {record_date}?\nThis action cannot be undone."
+            )
+            if not confirm:
+                return
+
+            # Delete from database with precise matching
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+
+            # First verify we have exactly one matching record
+            cursor.execute('''
+                SELECT COUNT(*) FROM time_records 
+                WHERE employee_id = ? AND date = ?
+            ''', (employee_id, record_date))
+
+            count = cursor.fetchone()[0]
+
+            if count == 0:
+                raise ValueError("No matching record found in database")
+            elif count > 1:
+                # Handle case where duplicates exist
+                messagebox.showwarning("Warning", 
+                                     f"Found {count} entries for this date. Deleting all matching entries.")
+
+            # Proceed with deletion
+            cursor.execute('''
+                DELETE FROM time_records 
+                WHERE employee_id = ? AND date = ?
+            ''', (employee_id, record_date))
+
+            deleted_rows = cursor.rowcount
+            conn.commit()
+
+            if deleted_rows == 1:
+                messagebox.showinfo("Success", "Time entry deleted successfully")
+            else:
+                messagebox.showinfo("Info", f"Deleted {deleted_rows} time entries")
+
+            # Refresh the display
+            self.load_time_records()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to delete time entry: {str(e)}")
+        finally:
+            if 'conn' in locals():
+                conn.close()
+
+    def edit_time_entry(self):
+        sort_out_time_entries()
+        pass
 
     def generate_employee_report(self):
         """Generate report for selected employee"""
