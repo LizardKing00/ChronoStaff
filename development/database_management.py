@@ -179,13 +179,13 @@ class EmployeeManager:
         """Properly update employee information in database"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        
+
         try:
             # Build the update query dynamically based on provided kwargs
             set_clause = ", ".join([f"{key} = ?" for key in kwargs.keys()])
             values = list(kwargs.values())
             values.append(emp_id)  # Add emp_id for WHERE clause
-            
+
             query = f"UPDATE employees SET {set_clause} WHERE id = ?"
             cursor.execute(query, values)
             conn.commit()
@@ -209,13 +209,14 @@ class EmployeeManager:
                 message = "Employee permanently deleted"
             else:
                 # Soft delete (mark as inactive)
-                cursor.execute('UPDATE employees SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (emp_id,))
+                cursor.execute('UPDATE employees SET active = 0 WHERE id = ?', (emp_id,))
                 message = "Employee deactivated"
             
             conn.commit()
             return True, message
-        except Exception as e:
-            return False, f"Error removing employee: {str(e)}"
+        except sqlite3.Error as e:
+            conn.rollback()
+            return False, f"Database error: {str(e)}"
         finally:
             conn.close()
     
@@ -223,16 +224,16 @@ class EmployeeManager:
         """Reactivate a deactivated employee"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        
         try:
-            cursor.execute('UPDATE employees SET active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (emp_id,))
+            cursor.execute('UPDATE employees SET active = 1 WHERE id = ?', (emp_id,))
             conn.commit()
-            return True, "Employee reactivated successfully"
-        except Exception as e:
-            return False, f"Error reactivating employee: {str(e)}"
+            return True, "Employee reactivated"
+        except sqlite3.Error as e:
+            conn.rollback()
+            return False, f"Database error: {str(e)}"
         finally:
             conn.close()
-    
+
     def get_employee_settings(self, employee_id):
         """Get employee-specific settings"""
         conn = self.db.get_connection()

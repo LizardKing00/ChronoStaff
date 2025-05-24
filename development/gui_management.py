@@ -476,8 +476,31 @@ class EmployeeTimeApp:
             self.update_date_display()
 
     # =============================================================================
+    # HELPER METHODS
+    # =============================================================================
+
+    def _get_selected_employee_db_id(self):
+        """Helper method to get database ID of selected employee"""
+        selection = self.emp_tree.selection()
+        if not selection:
+            return None
+
+        item = self.emp_tree.item(selection[0])
+        employee_id = item['values'][0]  # Get displayed employee ID
+
+        # Get the actual database ID
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM employees WHERE employee_id = ?", (employee_id,))
+        result = cursor.fetchone()
+        conn.close()
+
+        return result[0] if result else None
+
+    # =============================================================================
     # EMPLOYEE MANAGEMENT METHODS
     # =============================================================================
+
     def not_yet_implemented(self):#TODO: Remove!
         """TODO Remove later, here just to patch up the missing functionality"""
         messagebox.showinfo("Info", "functionality to be implemented....")
@@ -713,38 +736,57 @@ class EmployeeTimeApp:
         ttk.Button(btn_frame, text="Save Changes", command=save_changes).pack(side=tk.LEFT, padx=10)
         ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=10)
     
-    def delete_employee(self):
-        """Delete selected employee"""
-        selection = self.emp_tree.selection()
-        if not selection:
-            messagebox.showwarning("Warning", "Please select an employee to delete.")
-            return
-        
-        if messagebox.askyesno("Confirm", "Are you sure you want to delete this employee?"):
-            # Implementation for employee deletion
-            self.employee_manager.remove_employee(self.selected_employee_id, permanent=True) #messagebox.showinfo("Info", "Delete employee functionality to be implemented")
-
     def deactivate_employee(self):
         """Deactivate selected employee"""
-        selection = self.emp_tree.selection()
-        if not selection:
+        emp_id = self._get_selected_employee_db_id()
+        if not emp_id:
             messagebox.showwarning("Warning", "Please select an employee to deactivate.")
             return
         
-        if messagebox.askyesno("Confirm", "Are you sure you want to deactivate this employee (you will be able to reactivate/permanently delete the employee later)?"):
-            # Implementation for employee deactivation
-            self.employee_manager.remove_employee(self.selected_employee_id, permanent=False)
-
+        if messagebox.askyesno("Confirm", 
+                             "Are you sure you want to deactivate this employee?\n"
+                             "(You can reactivate them later)"):
+            success, message = self.employee_manager.remove_employee(emp_id, permanent=False)
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                self.refresh_employee_list()
+            else:
+                messagebox.showerror("Error", message)
+    
     def reactivate_employee(self):
         """Reactivate selected employee"""
-        selection = self.emp_tree.selection()
-        if not selection:
+        emp_id = self._get_selected_employee_db_id()
+        if not emp_id:
             messagebox.showwarning("Warning", "Please select an employee to reactivate.")
             return
         
         if messagebox.askyesno("Confirm", "Are you sure you want to reactivate this employee?"):
-            # Implementation for employee deletion
-            self.employee_manager.reactivate_employee(self.selected_employee_id)
+            success, message = self.employee_manager.reactivate_employee(emp_id)
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                self.refresh_employee_list()
+            else:
+                messagebox.showerror("Error", message)
+    
+    def delete_employee(self):
+        """Permanently delete selected employee"""
+        emp_id = self._get_selected_employee_db_id()
+        if not emp_id:
+            messagebox.showwarning("Warning", "Please select an employee to delete.")
+            return
+        
+        if messagebox.askyesno("Confirm", 
+                             "WARNING: This will permanently delete the employee and all their records!\n"
+                             "Are you absolutely sure?"):
+            success, message = self.employee_manager.remove_employee(emp_id, permanent=True)
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                self.refresh_employee_list()
+            else:
+                messagebox.showerror("Error", message)
 
     def on_employee_select(self, event):
         """Handle employee selection"""
@@ -1202,7 +1244,7 @@ class EmployeeTimeApp:
         self.stats_values['YTD Overtime'].config(text=f"{yearly_summary['total_overtime']:.1f}")
 
 # =============================================================================
-# MAIN APPLICATION ENTRY POINT
+# MAIN APPLICATION ENTRY POINT                                                  #TODO:  later edit
 # =============================================================================
 
 if __name__ == "__main__":
