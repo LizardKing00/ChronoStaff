@@ -9,17 +9,23 @@ import calendar
 import json
 from calendar_popup import CalendarDialog
 from database_management import DatabaseManager, EmployeeManager, TimeTracker
+from PIL import Image, ImageTk #Still needed?
+import os
+import base64
 
 # =============================================================================
 # MAIN APPLICATION GUI
 # =============================================================================
 
 class EmployeeTimeApp:
+    
     def __init__(self, root):
         self.root = root
-        self.root.title("Employee Time Management System")
+        self.root.title("Chrono Staff")
         self.root.geometry("1200x800")
-        
+        self.date_var = tk.StringVar()
+        self.date_display_var = tk.StringVar()        
+
         # Initialize database and managers
         self.db_manager = DatabaseManager()
         self.employee_manager = EmployeeManager(self.db_manager)
@@ -34,7 +40,7 @@ class EmployeeTimeApp:
         # Style configuration
         self.configure_styles()
         self.create_widgets()
-    
+ 
     def configure_styles(self):
         """Configure custom styles for the application"""
         style = ttk.Style()
@@ -134,127 +140,131 @@ class EmployeeTimeApp:
         """Create time tracking tab"""
         time_frame = ttk.Frame(self.notebook)
         self.notebook.add(time_frame, text="Time Tracking")
-        
+
         # Main container
         main_container = ttk.Frame(time_frame)
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
+
         # Employee selection frame
         select_frame = ttk.LabelFrame(main_container, text="Employee & Period Selection")
         select_frame.pack(fill=tk.X, pady=(0, 10))
-        
+
         # Employee selection row
         emp_row = ttk.Frame(select_frame)
         emp_row.pack(fill=tk.X, padx=10, pady=5)
-        
+
         ttk.Label(emp_row, text="Employee:").pack(side=tk.LEFT)
         self.emp_var = tk.StringVar()
         self.emp_combo = ttk.Combobox(emp_row, textvariable=self.emp_var, width=40, state="readonly")
         self.emp_combo.pack(side=tk.LEFT, padx=(5, 20))
         self.emp_combo.bind('<<ComboboxSelected>>', self.on_employee_select)
-        
+
         # Month/Year selection
         ttk.Label(emp_row, text="Month:").pack(side=tk.LEFT)
         self.month_var = tk.IntVar(value=self.current_month)
         month_spin = tk.Spinbox(emp_row, from_=1, to=12, textvariable=self.month_var, width=5)
         month_spin.pack(side=tk.LEFT, padx=(5, 10))
-        
+
         ttk.Label(emp_row, text="Year:").pack(side=tk.LEFT)
         self.year_var = tk.IntVar(value=self.current_year)
         year_spin = tk.Spinbox(emp_row, from_=2020, to=2030, textvariable=self.year_var, width=8)
         year_spin.pack(side=tk.LEFT, padx=(5, 20))
-        
+
         ttk.Button(emp_row, text="Load Month Data", command=self.load_month_data).pack(side=tk.LEFT, padx=5)
-        
+
         # Time entry section
         entry_frame = ttk.LabelFrame(main_container, text="Add/Edit Time Entry")
         entry_frame.pack(fill=tk.X, pady=(0, 10))
-        
+
         # First row - Date and basic info
         date_row = ttk.Frame(entry_frame)
         date_row.pack(fill=tk.X, padx=10, pady=5)
-        
+
         ttk.Label(date_row, text="Date:").pack(side=tk.LEFT)
-        
+        self.date_display_var = tk.StringVar()
+
         # Date entry fields
         self.day_var = tk.IntVar(value=date.today().day)
         self.date_month_var = tk.IntVar(value=date.today().month)
         self.date_year_var = tk.IntVar(value=date.today().year)
-        
+
+        # formatted date (YYYY-MM-DD)
+        self.date_var = tk.StringVar()
+        self.update_date_display()
+
         day_spin = tk.Spinbox(date_row, from_=1, to=31, textvariable=self.day_var, width=4)
         day_spin.pack(side=tk.LEFT, padx=2)
         ttk.Label(date_row, text="/").pack(side=tk.LEFT)
-        
+
         month_spin = tk.Spinbox(date_row, from_=1, to=12, textvariable=self.date_month_var, width=4)
         month_spin.pack(side=tk.LEFT, padx=2)
         ttk.Label(date_row, text="/").pack(side=tk.LEFT)
-        
+
         year_spin = tk.Spinbox(date_row, from_=2020, to=2030, textvariable=self.date_year_var, width=6)
         year_spin.pack(side=tk.LEFT, padx=2)
-        
-        # Calendar button
+
+        # Calendar button #TODO: this icon is ugly, change this 
         ttk.Button(date_row, text="📅", width=3, command=self.open_calendar).pack(side=tk.LEFT, padx=5)
-        
+
         # Display selected date
         self.date_display_var = tk.StringVar()
         self.update_date_display()
         ttk.Label(date_row, textvariable=self.date_display_var, foreground='blue').pack(side=tk.LEFT, padx=10)
-        
+
         # Hours and type
         ttk.Label(date_row, text="Hours:").pack(side=tk.LEFT, padx=(20, 0))
         self.hours_var = tk.DoubleVar()
         ttk.Entry(date_row, textvariable=self.hours_var, width=8).pack(side=tk.LEFT, padx=5)
-        
+
         ttk.Label(date_row, text="Type:").pack(side=tk.LEFT, padx=(10, 0))
         self.type_var = tk.StringVar(value="work")
         type_combo = ttk.Combobox(date_row, textvariable=self.type_var, 
                                  values=["work", "vacation", "sick", "holiday"], width=10, state="readonly")
         type_combo.pack(side=tk.LEFT, padx=5)
-        
+
         # Second row - Notes and buttons
         notes_row = ttk.Frame(entry_frame)
         notes_row.pack(fill=tk.X, padx=10, pady=5)
-        
+
         ttk.Label(notes_row, text="Notes:").pack(side=tk.LEFT)
         self.notes_var = tk.StringVar()
         ttk.Entry(notes_row, textvariable=self.notes_var, width=50).pack(side=tk.LEFT, padx=(5, 20))
-        
+
         ttk.Button(notes_row, text="Add Entry", command=self.add_time_entry).pack(side=tk.RIGHT, padx=5)
-        #ttk.Button(notes_row, text="Clear Form", command=self.clear_time_form).pack(side=tk.RIGHT, padx=5) #TODO: MAYBE implement
-        
+
         # Bind events to update date display
         for widget in [day_spin, month_spin, year_spin]:
             widget.bind('<FocusOut>', lambda e: self.update_date_display())
             widget.bind('<KeyRelease>', lambda e: self.root.after(100, self.update_date_display))
-        
+
         # Time records display
         records_frame = ttk.LabelFrame(main_container, text="Time Records")
         records_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Time records treeview
         time_columns = ('Date', 'Hours', 'Overtime', 'Type', 'Notes')
         self.time_tree = ttk.Treeview(records_frame, columns=time_columns, show='headings', height=10)
-        
+
         time_widths = {'Date': 100, 'Hours': 80, 'Overtime': 80, 'Type': 100, 'Notes': 200}
         for col in time_columns:
             self.time_tree.heading(col, text=col)
             self.time_tree.column(col, width=time_widths.get(col, 100))
-        
+
         time_scrollbar = ttk.Scrollbar(records_frame, orient=tk.VERTICAL, command=self.time_tree.yview)
         self.time_tree.configure(yscrollcommand=time_scrollbar.set)
-        
+
         self.time_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
         time_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=10)
-        
+
         # Time records buttons
         time_btn_frame = ttk.Frame(records_frame)
         time_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
+
         ttk.Button(time_btn_frame, text="Edit Selected", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
         ttk.Button(time_btn_frame, text="Delete Selected", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
-        
+
         self.update_employee_combo()
-    
+
     def create_reports_tab(self):
         """Create reports tab"""
         reports_frame = ttk.Frame(self.notebook)
@@ -478,6 +488,37 @@ class EmployeeTimeApp:
     # =============================================================================
     # HELPER METHODS
     # =============================================================================
+
+    def update_date_display(self):
+        """Update the displayed date and store it in self.date_var (YYYY-MM-DD)"""
+        try:
+            # Check if required variables exist
+            if not all(hasattr(self, var) for var in ['day_var', 'date_month_var', 'date_year_var']):
+                return
+
+            day = self.day_var.get()
+            month = self.date_month_var.get()
+            year = self.date_year_var.get()
+
+            # Validate date (basic check)
+            if not (1 <= day <= 31 and 1 <= month <= 12 and year >= 2020):
+                raise ValueError("Invalid date range")
+
+            # Format as YYYY-MM-DD
+            formatted_date = f"{year:04d}-{month:02d}-{day:02d}"
+
+            # Update variables if they exist
+            if hasattr(self, 'date_var'):
+                self.date_var.set(formatted_date)
+            if hasattr(self, 'date_display_var'):
+                self.date_display_var.set(formatted_date)
+
+        except (ValueError, AttributeError, tk.TclError):
+            # Fallback for invalid dates
+            if hasattr(self, 'date_display_var'):
+                self.date_display_var.set("Invalid date")
+            if hasattr(self, 'date_var'):
+                self.date_var.set("")
 
     def _get_selected_employee_db_id(self):
         """Helper method to get database ID of selected employee"""
@@ -831,16 +872,6 @@ class EmployeeTimeApp:
         self.selected_employee = None
         self.selected_employee_id = None
 
-    def update_date_display(self):
-        """Update the date display label"""
-        try:
-            selected_date = date(self.year_var.get(), self.month_var.get(), self.day_var.get())
-            day_name = selected_date.strftime("%A")
-            formatted_date = selected_date.strftime("%B %d, %Y")
-            self.date_display_var.set(f"({day_name}, {formatted_date})")
-        except ValueError:
-            self.date_display_var.set("(Invalid Date)")
-
     def load_month_data(self):
         """Load time data for selected month"""
         if not self.selected_employee:
@@ -866,26 +897,26 @@ class EmployeeTimeApp:
         if not self.selected_employee:
             messagebox.showwarning("Warning", "Please select an employee first.")
             return
-        
         try:
             entry_date = datetime.strptime(self.date_var.get(), "%Y-%m-%d").date()
             hours = self.hours_var.get()
             record_type = self.type_var.get()
             notes = self.notes_var.get()
-            
-            self.time_tracker.add_time_record(
+            success, message = self.time_tracker.add_time_record(
                 self.selected_employee, entry_date, hours, record_type, notes
             )
-            
-            messagebox.showinfo("Success", "Time entry added successfully!")
-            
-            # Clear form
-            self.hours_var.set(0.0)
-            self.notes_var.set("")
-            
+            if success:
+                messagebox.showinfo("Success", message)
+                # Clear form
+                self.hours_var.set(0.0)
+                self.notes_var.set("")
+            else:
+                messagebox.showerror("Error", message)
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid date (YYYY-MM-DD)")
-    
+        except AttributeError:
+            messagebox.showerror("Error", "Could not find date attribute. Please check the date field.")
+
     def generate_employee_report(self):
         """Generate report for selected employee"""
         if not self.selected_employee:
