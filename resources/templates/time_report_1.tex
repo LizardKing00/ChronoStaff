@@ -1,0 +1,111 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=1.5cm]{geometry}
+\usepackage[svgnames]{xcolor}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{fancyhdr}
+
+% ===== USER CONFIGURATION =====
+% Company Information
+% ___DATA0___
+\newcommand{\companyname}{My Company GmbH} % Company name
+\newcommand{\companystreet}{Businessstraße 123} % Street address
+\newcommand{\companycity}{10115 Berlin} % City with ZIP
+\newcommand{\companyphone}{+49-30-1234567} % Phone number
+\newcommand{\companyemail}{contact@mycompany.com} % Email address
+\newcommand{\companylogo}{company_logo.png} % Path to logo file
+
+% Employee Information
+% ___DATA1___
+\newcommand{\employeename}{Max Mustermann} % Employee name
+\newcommand{\employeenumber}{10042} % Personnel number
+\newcommand{\reportperiod}{February 2025} % Reporting period
+
+% Company Color
+% ___DATA2___
+\definecolor{primary}{HTML}{2B579A}  % Company primary color
+\definecolor{secondary}{HTML}{00A4EF} % Company secondary color
+\definecolor{tertiary}{HTML}{00A4EF} % Company tertiary color
+% =============================
+
+\geometry{margin=2.5cm}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Time Report: \reportperiod}
+\lhead{\companyname}
+\cfoot{\thepage}
+
+
+
+\begin{document}
+
+% Company Header
+\begin{minipage}{0.6\textwidth}
+    \textbf{\companyname} \\
+    \companystreet \\
+    \companycity \\
+    Phone: \companyphone \\
+    Email: \companyemail \\
+\end{minipage}
+\begin{minipage}{0.38\textwidth}
+    \raggedleft
+    \includegraphics[width=4cm]{\companylogo} % <- Replace with actual logo file
+\end{minipage}
+
+\vspace{1cm}
+
+% Report Title
+\begin{center}
+    {\LARGE \textbf{Monthly Working Time Report}} \\
+    \vspace{0.5cm}
+    \reportperiod
+\end{center}
+
+\vspace{1cm}
+
+% Employee Info
+\noindent
+\textbf{Employee Name:} \employeename \\
+\textbf{Personnel Number:} \employeenumber
+
+\vspace{1cm}
+
+\begin{center}
+\begin{longtable}{|c|c|c|c|c|c|c|}
+    \hline
+    \textbf{Date} & \textbf{Start Time} & \textbf{End Time} & \textbf{Total Minutes} & \textbf{Break} & \textbf{Vacation} & \textbf{Sick} \\
+    \hline
+    % ___DATA3___
+    01.01.2023 & 09:00 & 17:00 & 480 & 30 & No & No \\
+    02.01.2023 & 08:30 & 16:45 & 495 & 45 & No & No \\
+    03.01.2023 & - & - & 0 & 0 & Yes & No \\
+    \hline
+    % ___DATA4___
+    \multicolumn{3}{|l|}{\textbf{Total}} & 975 & 75 & 1 day & 0 days \\
+    \hline
+\end{longtable}
+\end{center}
+
+% Summary section (using the same tabular as header for consistency)
+\begin{center}
+\begin{tabular}{lr}
+    % ___DATA5___
+    \textbf{Total Working Hours:} & 16.25 hours \\
+    \textbf{Vacation Days Used:} & 1 day \\
+    \textbf{Sick Leave Taken:} & 0 days \\[0.5cm]
+\end{tabular}
+\end{center}
+
+\vspace{1cm}
+
+\noindent
+\begin{flushleft}
+    \small
+    \textit{Generated on: \today} \\
+    \textit{Confidential - For internal use only}
+\end{flushleft}
+\end{document}

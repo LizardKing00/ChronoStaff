@@ -1,0 +1,106 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=1.5cm]{geometry}
+\usepackage[table]{xcolor}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage[colorlinks=true, allcolors=primary]{hyperref} % Correct hyperlink formatting
+\usepackage{xurl}
+
+% ===== USER CONFIGURATION =====
+% Company Information
+% ___DATA0___
+\newcommand{\companyname}{My Company GmbH} % Company name
+\newcommand{\companystreet}{Businessstraße 123} % Street address
+\newcommand{\companycity}{10115 Berlin} % City with ZIP
+\newcommand{\companyphone}{+49-30-1234567} % Phone number
+\newcommand{\companyemail}{contact@mycompany.com} % Email address
+\newcommand{\companylogo}{company_logo.png} % Path to logo file
+
+% Employee Information
+% ___DATA1___
+\newcommand{\employeename}{Max Mustermann} % Employee name
+\newcommand{\employeenumber}{10042} % Personnel number
+\newcommand{\reportperiod}{February 2025} % Reporting period
+
+% Company Color
+% ___DATA2___
+\definecolor{primary}{HTML}{2B579A}  % Company primary color
+\definecolor{secondary}{HTML}{00A4EF} % Company secondary color
+\definecolor{tertiary}{HTML}{00A4EF} % Company tertiary color
+% =============================
+
+% Page styling
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\color{primary}\companyname}
+\fancyhead[R]{\small\color{primary}Time Report for \reportperiod}
+\fancyfoot[C]{\small\color{primary}Page \thepage\ of \pageref{LastPage}} 
+
+\begin{document}
+
+% Title section
+\begin{center}
+    \IfFileExists{\companylogo}{
+        \includegraphics[height=2cm]{\companylogo}\\[0.5cm]
+    }{}
+    
+    {\LARGE\bfseries\color{primary}Monthly Working Time Report}\\[0.5cm]
+    {\large\color{secondary}\companyname}\\[0.5cm]
+    
+    \footnotesize
+    \begin{tabular}{@{}l@{}}
+        \companystreet \\
+        \companycity \\
+        Phone: \href{tel:\companyphone}{\companyphone} \\
+        Email: \href{mailto:\companyemail}{\companyemail}
+    \end{tabular}
+\end{center}
+
+% Employee information
+\vspace{0.5cm}
+\begin{tabularx}{\textwidth}{Xr} % Fixed width of 10cm
+    \textbf{Employee Name:} & \employeename \\
+    \textbf{Personnel Number:} & \employeenumber \\
+    \textbf{Report Period:} & \reportperiod \\[0.5cm]
+\end{tabularx}
+
+% Main timesheet table
+\begin{center}
+\begin{longtable}{|c|c|c|c|c|c|c|}
+    \hline
+    \rowcolor{primary!20}
+    \textbf{Date} & \textbf{Start Time} & \textbf{End Time} & \textbf{Total Minutes} & \textbf{Break} & \textbf{Vacation} & \textbf{Sick} \\
+    \hline
+    % ___DATA3___
+    01.01.2023 & 09:00 & 17:00 & 480 & 30 & No & No \\
+    02.01.2023 & 08:30 & 16:45 & 495 & 45 & No & No \\
+    03.01.2023 & - & - & 0 & 0 & Yes & No \\
+    \hline
+    \rowcolor{secondary!20}
+    % ___DATA4___
+    \multicolumn{3}{|l|}{\textbf{Total}} & 975 & 75 & 0 days & 0 days \\
+    \hline
+\end{longtable}
+\end{center}
+
+% Summary section
+\vspace{0.5cm}
+\begin{tabularx}{\textwidth}{Xr}
+    % ___DATA5___
+    \textbf{Total Working Hours:} & 16.25 hours \\
+    \textbf{Vacation Days Used:} & 0 days \\
+    \textbf{Sick Leave Taken:} & 0 days \\[0.5cm]
+\end{tabularx}
+\begin{flushleft}
+    \small
+    \textit{Generated on: \today} \\
+    \textit{Confidential - For internal use only}
+\end{flushleft}
+
+\end{document}
