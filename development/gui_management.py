@@ -481,21 +481,46 @@ class EmployeeTimeApp:
 
     def _get_selected_employee_db_id(self):
         """Helper method to get database ID of selected employee"""
-        selection = self.emp_tree.selection()
-        if not selection:
+        try:
+            selection = self.emp_tree.selection()
+            if not selection:
+                return None
+
+            item = self.emp_tree.item(selection[0])
+
+            print("Treeview item values:", item['values'])  # For debugging TODO: remove
+
+            if not item['values'] or len(item['values']) < 1:
+                return None
+
+            displayed_id = item['values'][0] 
+
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+
+            try:
+                cursor.execute("SELECT id FROM employees WHERE employee_id = ?", (displayed_id,))
+                result = cursor.fetchone()
+
+                if not result:
+                    try:
+                        cursor.execute("SELECT id FROM employees WHERE id = ?", (int(displayed_id),))
+                        result = cursor.fetchone()
+                    except (ValueError, TypeError):
+                        pass
+
+                if not result:
+                    print(f"Employee with ID {displayed_id} not found in database")
+                    return None
+
+                return result[0]
+
+            finally:
+                conn.close()
+
+        except Exception as e:
+            print(f"Error in _get_selected_employee_db_id: {str(e)}")
             return None
-
-        item = self.emp_tree.item(selection[0])
-        employee_id = item['values'][0]  # Get displayed employee ID
-
-        # Get the actual database ID
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM employees WHERE employee_id = ?", (employee_id,))
-        result = cursor.fetchone()
-        conn.close()
-
-        return result[0] if result else None
 
     # =============================================================================
     # EMPLOYEE MANAGEMENT METHODS
@@ -742,46 +767,46 @@ class EmployeeTimeApp:
         if not emp_id:
             messagebox.showwarning("Warning", "Please select an employee to deactivate.")
             return
-        
+
         if messagebox.askyesno("Confirm", 
                              "Are you sure you want to deactivate this employee?\n"
                              "(You can reactivate them later)"):
             success, message = self.employee_manager.remove_employee(emp_id, permanent=False)
-            
+
             if success:
                 messagebox.showinfo("Success", message)
                 self.refresh_employee_list()
             else:
                 messagebox.showerror("Error", message)
-    
+
     def reactivate_employee(self):
         """Reactivate selected employee"""
         emp_id = self._get_selected_employee_db_id()
         if not emp_id:
             messagebox.showwarning("Warning", "Please select an employee to reactivate.")
             return
-        
+
         if messagebox.askyesno("Confirm", "Are you sure you want to reactivate this employee?"):
             success, message = self.employee_manager.reactivate_employee(emp_id)
-            
+
             if success:
                 messagebox.showinfo("Success", message)
                 self.refresh_employee_list()
             else:
                 messagebox.showerror("Error", message)
-    
+
     def delete_employee(self):
         """Permanently delete selected employee"""
         emp_id = self._get_selected_employee_db_id()
         if not emp_id:
             messagebox.showwarning("Warning", "Please select an employee to delete.")
             return
-        
+
         if messagebox.askyesno("Confirm", 
                              "WARNING: This will permanently delete the employee and all their records!\n"
                              "Are you absolutely sure?"):
             success, message = self.employee_manager.remove_employee(emp_id, permanent=True)
-            
+
             if success:
                 messagebox.showinfo("Success", message)
                 self.refresh_employee_list()
