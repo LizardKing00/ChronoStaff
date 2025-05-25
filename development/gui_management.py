@@ -42,9 +42,9 @@ class EmployeeTimeApp:
         self.configure_styles()
         self.create_widgets()
 
-    # =============================================================================
-    # WINDOWS, TABS ETC...
-    # =============================================================================
+  # =============================================================================
+  # WINDOWS, TABS ETC...
+  # =============================================================================
 
     def configure_styles(self):
         """Configure custom styles for the application"""
@@ -746,9 +746,9 @@ class EmployeeTimeApp:
             if value:  # Skip empty value for header row
                 ttk.Label(stats_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
 
-    # =============================================================================
-    # HELPER METHODS
-    # =============================================================================
+  # =============================================================================
+  # HELPER METHODS
+  # =============================================================================
 
     def update_date_display(self):
         """Update the displayed date and store it in self.date_var (YYYY-MM-DD)"""
@@ -967,10 +967,13 @@ class EmployeeTimeApp:
         """TODO Remove later, here just to patch up the missing functionality"""
         messagebox.showinfo("Info", "functionality to be implemented....")
 
+  # =============================================================================
+  #  TIME MANAGEMENT METHODS
+  # =============================================================================
 
-    # =============================================================================
-    # EMPLOYEE MANAGEMENT METHODS
-    # =============================================================================
+  # =============================================================================
+  # EMPLOYEE MANAGEMENT METHODS
+  # =============================================================================
 
     def refresh_employee_list(self):
         """Refresh the employee list display"""
