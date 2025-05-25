@@ -51,6 +51,8 @@ class EmployeeTimeApp:
         style = ttk.Style()
         style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
         style.configure('Title.TLabel', font=('Arial', 14, 'bold'))
+        style.configure('Info.TLabel', font=('Arial', 10), foreground='blue')
+        style.configure('Error.TLabel', font=('Arial', 10), foreground='red')
     
     def create_widgets(self):
         """Create main GUI widgets"""
@@ -165,10 +167,13 @@ class EmployeeTimeApp:
         self.emp_combo.bind('<<ComboboxSelected>>', self.on_employee_select)
 
         # Month/Year selection
-        ttk.Label(emp_row, text="Month:").pack(side=tk.LEFT)
-        self.month_var = tk.IntVar(value=self.current_month)
-        month_spin = tk.Spinbox(emp_row, from_=1, to=12, textvariable=self.month_var, width=5)
-        month_spin.pack(side=tk.LEFT, padx=(5, 10))
+        self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
+        ttk.Label(emp_row, textvariable=self.period_display_var, style='Info.TLabel').pack(side=tk.LEFT, padx=(5, 20))
+
+        # ttk.Label(emp_row, text="Month:").pack(side=tk.LEFT)
+        # self.month_var = tk.IntVar(value=self.current_month)
+        # month_spin = tk.Spinbox(emp_row, from_=1, to=12, textvariable=self.month_var, width=5)
+        # month_spin.pack(side=tk.LEFT, padx=(5, 10))
 
         ttk.Label(emp_row, text="Year:").pack(side=tk.LEFT)
         self.year_var = tk.IntVar(value=self.current_year)
@@ -966,6 +971,21 @@ class EmployeeTimeApp:
     def not_yet_implemented(self):#TODO: Remove!
         """TODO Remove later, here just to patch up the missing functionality"""
         messagebox.showinfo("Info", "functionality to be implemented....")
+
+    def update_period_display(self):
+        """Update the period display label"""
+        self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
+
+    def update_view_period_if_needed(self):
+        """Update view period if the selected date is in a different month/year"""
+        selected_date = self.date_manager.selected_date
+        if (selected_date.month != self.date_manager.view_month or 
+            selected_date.year != self.date_manager.view_year):
+            
+            self.date_manager.set_view_period(selected_date.month, selected_date.year)
+            self.update_period_display()
+            if self.selected_employee:
+                self.load_time_records()
 
   # =============================================================================
   #  TIME MANAGEMENT METHODS
