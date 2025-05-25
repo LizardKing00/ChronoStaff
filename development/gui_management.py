@@ -9,7 +9,7 @@ import calendar
 import json
 from calendar_popup import CalendarDialog
 from database_management import DatabaseManager, EmployeeManager, TimeTracker
-from PIL import Image, ImageTk #Still needed?
+from date_management import DateManager
 import os
 import base64
 
@@ -30,7 +30,8 @@ class EmployeeTimeApp:
         self.db_manager = DatabaseManager()
         self.employee_manager = EmployeeManager(self.db_manager)
         self.time_tracker = TimeTracker(self.db_manager)
-        
+        self.date_manager = DateManager()
+
         # Current selections
         self.selected_employee = None
         self.selected_employee_id = None
@@ -40,7 +41,11 @@ class EmployeeTimeApp:
         # Style configuration
         self.configure_styles()
         self.create_widgets()
- 
+
+    # =============================================================================
+    # WINDOWS, TABS ETC...
+    # =============================================================================
+
     def configure_styles(self):
         """Configure custom styles for the application"""
         style = ttk.Style()
@@ -485,6 +490,262 @@ class EmployeeTimeApp:
             self.year_var.set(selected_date.year)
             self.update_date_display()
 
+    def create_employee_details_tab(self):
+        """Create a tab to display detailed employee information"""
+        details_frame = ttk.Frame(self.notebook)
+        self.notebook.add(details_frame, text="Employee Details")
+
+        # Main container frame
+        container = ttk.Frame(details_frame)
+        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Employee selection
+        selection_frame = ttk.Frame(container)
+        selection_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(selection_frame, text="Select Employee:").pack(side=tk.LEFT)
+        self.details_emp_var = tk.StringVar()
+        self.details_emp_combo = ttk.Combobox(
+            selection_frame, 
+            textvariable=self.details_emp_var, 
+            width=30,
+            state='readonly'
+        )
+        self.details_emp_combo.pack(side=tk.LEFT, padx=5)
+        self.details_emp_combo.bind('<<ComboboxSelected>>', self.load_employee_details)
+
+        # Refresh button
+        ttk.Button(
+            selection_frame, 
+            text="Refresh", 
+            command=self.update_details_combo
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Details display notebook
+        details_notebook = ttk.Notebook(container)
+        details_notebook.pack(fill=tk.BOTH, expand=True)
+
+        # Personal Info Tab
+        personal_frame = ttk.Frame(details_notebook)
+        details_notebook.add(personal_frame, text="Personal Info")
+
+        # Create labels for personal info
+        self.personal_info_labels = {
+            'Name': ttk.Label(personal_frame, text="Name:"),
+            'Employee ID': ttk.Label(personal_frame, text="Employee ID:"),
+            'Position': ttk.Label(personal_frame, text="Position:"),
+            'Hourly Rate': ttk.Label(personal_frame, text="Hourly Rate:"),
+            'Email': ttk.Label(personal_frame, text="Email:"),
+            'Hire Date': ttk.Label(personal_frame, text="Hire Date:"),
+            'Status': ttk.Label(personal_frame, text="Status:")
+        }
+
+        # Corresponding value labels
+        self.personal_info_values = {
+            'Name': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Employee ID': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Position': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Hourly Rate': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Email': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Hire Date': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Status': ttk.Label(personal_frame, text="", foreground='blue')
+        }
+
+        # Grid layout for personal info
+        for i, (key, label) in enumerate(self.personal_info_labels.items()):
+            label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
+            self.personal_info_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
+
+        # Work Details Tab
+        work_frame = ttk.Frame(details_notebook)
+        details_notebook.add(work_frame, text="Work Details")
+
+        # Work details labels
+        self.work_info_labels = {
+            'Hours/Week': ttk.Label(work_frame, text="Hours/Week:"),
+            'Vacation Days/Year': ttk.Label(work_frame, text="Vacation Days/Year:"),
+            'Sick Days/Year': ttk.Label(work_frame, text="Sick Days/Year:"),
+            'Vacation Days Remaining': ttk.Label(work_frame, text="Vacation Days Remaining:"),
+            'Sick Days Remaining': ttk.Label(work_frame, text="Sick Days Remaining:")
+        }
+
+        # Work details values
+        self.work_info_values = {
+            'Hours/Week': ttk.Label(work_frame, text="", foreground='blue'),
+            'Vacation Days/Year': ttk.Label(work_frame, text="", foreground='blue'),
+            'Sick Days/Year': ttk.Label(work_frame, text="", foreground='blue'),
+            'Vacation Days Remaining': ttk.Label(work_frame, text="", foreground='blue'),
+            'Sick Days Remaining': ttk.Label(work_frame, text="", foreground='blue')
+        }
+
+        # Grid layout for work info
+        for i, (key, label) in enumerate(self.work_info_labels.items()):
+            label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
+            self.work_info_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
+
+        # Stats Tab
+        stats_frame = ttk.Frame(details_notebook)
+        details_notebook.add(stats_frame, text="Statistics")
+
+        # Current month/year
+        current_month = datetime.now().month
+        current_year = datetime.now().year
+
+        # Stats labels
+        self.stats_labels = {
+            'Current Month': ttk.Label(stats_frame, text=f"{calendar.month_name[current_month]} {current_year}:"),
+            'Work Hours': ttk.Label(stats_frame, text="Work Hours:"),
+            'Overtime': ttk.Label(stats_frame, text="Overtime:"),
+            'Vacation Days': ttk.Label(stats_frame, text="Vacation Days:"),
+            'Sick Days': ttk.Label(stats_frame, text="Sick Days:"),
+            'YTD Work Hours': ttk.Label(stats_frame, text="YTD Work Hours:"),
+            'YTD Overtime': ttk.Label(stats_frame, text="YTD Overtime:")
+        }
+
+        # Stats values
+        self.stats_values = {
+            'Work Hours': ttk.Label(stats_frame, text="", foreground='blue'),
+            'Overtime': ttk.Label(stats_frame, text="", foreground='blue'),
+            'Vacation Days': ttk.Label(stats_frame, text="", foreground='blue'),
+            'Sick Days': ttk.Label(stats_frame, text="", foreground='blue'),
+            'YTD Work Hours': ttk.Label(stats_frame, text="", foreground='blue'),
+            'YTD Overtime': ttk.Label(stats_frame, text="", foreground='blue')
+        }
+
+        # Grid layout for stats
+        self.stats_labels['Current Month'].grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        for i, (key, label) in enumerate(self.stats_labels.items()):
+            if key != 'Current Month':
+                label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
+                self.stats_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
+
+        # Initialize the combo box
+        self.update_details_combo()
+
+    def create_employee_details_window(self):
+        """Create a standalone window to display details of the selected employee"""
+        # Get selected employee
+        selection = self.emp_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select an employee first.")
+            return
+
+        item = self.emp_tree.item(selection[0])
+        employee_id = item['values'][0] 
+
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM employees WHERE employee_id = ?", (employee_id,))
+        employee = cursor.fetchone()
+        conn.close()
+
+        if not employee:
+            messagebox.showerror("Error", "Selected employee not found in database")
+            return
+
+        details_window = tk.Toplevel(self.root)
+        details_window.title(f"Employee Details - {employee[1]} ({employee[2]})")
+        details_window.geometry("500x450")
+        details_window.transient(self.root)
+        details_window.grab_set()
+
+        details_window.protocol("WM_DELETE_WINDOW", details_window.destroy)
+
+        container = ttk.Frame(details_window)
+        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        header_frame = ttk.Frame(container)
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(header_frame, 
+                 text=f"{employee[1]} ({employee[2]})", 
+                 font=('Arial', 12, 'bold')).pack(side=tk.LEFT)
+
+        ttk.Button(
+            header_frame,
+            text="Close",
+            command=details_window.destroy
+        ).pack(side=tk.RIGHT)
+
+        details_notebook = ttk.Notebook(container)
+        details_notebook.pack(fill=tk.BOTH, expand=True)
+
+        personal_frame = ttk.Frame(details_notebook)
+        details_notebook.add(personal_frame, text="Personal Info")
+
+        personal_info = [
+            ("Name:", employee[1]),
+            ("Employee ID:", employee[2]),
+            ("Position:", employee[3] if employee[3] else "N/A"),
+            ("Hourly Rate:", f"${employee[4]:.2f}" if employee[4] else "N/A"),
+            ("Email:", employee[5] if employee[5] else "N/A"),
+            ("Hire Date:", employee[6] if employee[6] else "N/A"),
+            ("Status:", "Active" if employee[10] else "Inactive")
+        ]
+
+        for row, (label, value) in enumerate(personal_info):
+            ttk.Label(personal_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+            ttk.Label(personal_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        work_frame = ttk.Frame(details_notebook)
+        details_notebook.add(work_frame, text="Work Details")
+
+        current_year = datetime.now().year
+        start_of_year = date(current_year, 1, 1)
+
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT COUNT(*) FROM time_records 
+            WHERE employee_id = ? AND date >= ? AND record_type = 'vacation'
+        ''', (employee[0], start_of_year))
+        vacation_used = cursor.fetchone()[0]
+
+        cursor.execute('''
+            SELECT COUNT(*) FROM time_records 
+            WHERE employee_id = ? AND date >= ? AND record_type = 'sick'
+        ''', (employee[0], start_of_year))
+        sick_used = cursor.fetchone()[0]
+        conn.close()
+
+        vacation_remaining = max(0, (employee[8] if len(employee) > 8 else 20)) - vacation_used
+        sick_remaining = max(0, (employee[9] if len(employee) > 9 else 10) - sick_used)
+
+        work_info = [
+            ("Hours/Week:", f"{employee[7]:.1f}" if len(employee) > 7 else "40.0"),
+            ("Vacation Days/Year:", str(employee[8]) if len(employee) > 8 else "20"),
+            ("Sick Days/Year:", str(employee[9]) if len(employee) > 9 else "10"),
+            ("Vacation Days Remaining:", f"{vacation_remaining}"),
+            ("Sick Days Remaining:", f"{sick_remaining}")
+        ]
+
+        for row, (label, value) in enumerate(work_info):
+            ttk.Label(work_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+            ttk.Label(work_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        stats_frame = ttk.Frame(details_notebook)
+        details_notebook.add(stats_frame, text="Statistics")
+
+        current_month = datetime.now().month
+        monthly_summary = self.time_tracker.calculate_monthly_summary(employee[0], current_year, current_month)
+        yearly_summary = self.time_tracker.calculate_yearly_summary(employee[0], current_year)
+
+        stats_info = [
+            (f"{calendar.month_name[current_month]} {current_year}:", ""),
+            ("Work Hours:", f"{monthly_summary['total_work_hours']:.1f}"),
+            ("Overtime:", f"{monthly_summary['total_overtime']:.1f}"),
+            ("Vacation Days:", str(monthly_summary['vacation_days'])),
+            ("Sick Days:", str(monthly_summary['sick_days'])),
+            ("YTD Work Hours:", f"{yearly_summary['total_work_hours']:.1f}"),
+            ("YTD Overtime:", f"{yearly_summary['total_overtime']:.1f}")
+        ]
+
+        for row, (label, value) in enumerate(stats_info):
+            ttk.Label(stats_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+            if value:  # Skip empty value for header row
+                ttk.Label(stats_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
     # =============================================================================
     # HELPER METHODS
     # =============================================================================
@@ -702,13 +963,14 @@ class EmployeeTimeApp:
             if 'conn' in locals():
                 conn.close()
 
-    # =============================================================================
-    # EMPLOYEE MANAGEMENT METHODS
-    # =============================================================================
-
     def not_yet_implemented(self):#TODO: Remove!
         """TODO Remove later, here just to patch up the missing functionality"""
         messagebox.showinfo("Info", "functionality to be implemented....")
+
+
+    # =============================================================================
+    # EMPLOYEE MANAGEMENT METHODS
+    # =============================================================================
 
     def refresh_employee_list(self):
         """Refresh the employee list display"""
@@ -1167,262 +1429,6 @@ class EmployeeTimeApp:
         """Generate summary report for all employees"""
         self.report_text.delete(1.0, tk.END)
         self.report_text.insert(1.0, "Summary report functionality to be implemented...")
-
-    def create_employee_details_tab(self):
-        """Create a tab to display detailed employee information"""
-        details_frame = ttk.Frame(self.notebook)
-        self.notebook.add(details_frame, text="Employee Details")
-
-        # Main container frame
-        container = ttk.Frame(details_frame)
-        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Employee selection
-        selection_frame = ttk.Frame(container)
-        selection_frame.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(selection_frame, text="Select Employee:").pack(side=tk.LEFT)
-        self.details_emp_var = tk.StringVar()
-        self.details_emp_combo = ttk.Combobox(
-            selection_frame, 
-            textvariable=self.details_emp_var, 
-            width=30,
-            state='readonly'
-        )
-        self.details_emp_combo.pack(side=tk.LEFT, padx=5)
-        self.details_emp_combo.bind('<<ComboboxSelected>>', self.load_employee_details)
-
-        # Refresh button
-        ttk.Button(
-            selection_frame, 
-            text="Refresh", 
-            command=self.update_details_combo
-        ).pack(side=tk.LEFT, padx=5)
-
-        # Details display notebook
-        details_notebook = ttk.Notebook(container)
-        details_notebook.pack(fill=tk.BOTH, expand=True)
-
-        # Personal Info Tab
-        personal_frame = ttk.Frame(details_notebook)
-        details_notebook.add(personal_frame, text="Personal Info")
-
-        # Create labels for personal info
-        self.personal_info_labels = {
-            'Name': ttk.Label(personal_frame, text="Name:"),
-            'Employee ID': ttk.Label(personal_frame, text="Employee ID:"),
-            'Position': ttk.Label(personal_frame, text="Position:"),
-            'Hourly Rate': ttk.Label(personal_frame, text="Hourly Rate:"),
-            'Email': ttk.Label(personal_frame, text="Email:"),
-            'Hire Date': ttk.Label(personal_frame, text="Hire Date:"),
-            'Status': ttk.Label(personal_frame, text="Status:")
-        }
-
-        # Corresponding value labels
-        self.personal_info_values = {
-            'Name': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Employee ID': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Position': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Hourly Rate': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Email': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Hire Date': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Status': ttk.Label(personal_frame, text="", foreground='blue')
-        }
-
-        # Grid layout for personal info
-        for i, (key, label) in enumerate(self.personal_info_labels.items()):
-            label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
-            self.personal_info_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
-
-        # Work Details Tab
-        work_frame = ttk.Frame(details_notebook)
-        details_notebook.add(work_frame, text="Work Details")
-
-        # Work details labels
-        self.work_info_labels = {
-            'Hours/Week': ttk.Label(work_frame, text="Hours/Week:"),
-            'Vacation Days/Year': ttk.Label(work_frame, text="Vacation Days/Year:"),
-            'Sick Days/Year': ttk.Label(work_frame, text="Sick Days/Year:"),
-            'Vacation Days Remaining': ttk.Label(work_frame, text="Vacation Days Remaining:"),
-            'Sick Days Remaining': ttk.Label(work_frame, text="Sick Days Remaining:")
-        }
-
-        # Work details values
-        self.work_info_values = {
-            'Hours/Week': ttk.Label(work_frame, text="", foreground='blue'),
-            'Vacation Days/Year': ttk.Label(work_frame, text="", foreground='blue'),
-            'Sick Days/Year': ttk.Label(work_frame, text="", foreground='blue'),
-            'Vacation Days Remaining': ttk.Label(work_frame, text="", foreground='blue'),
-            'Sick Days Remaining': ttk.Label(work_frame, text="", foreground='blue')
-        }
-
-        # Grid layout for work info
-        for i, (key, label) in enumerate(self.work_info_labels.items()):
-            label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
-            self.work_info_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
-
-        # Stats Tab
-        stats_frame = ttk.Frame(details_notebook)
-        details_notebook.add(stats_frame, text="Statistics")
-
-        # Current month/year
-        current_month = datetime.now().month
-        current_year = datetime.now().year
-
-        # Stats labels
-        self.stats_labels = {
-            'Current Month': ttk.Label(stats_frame, text=f"{calendar.month_name[current_month]} {current_year}:"),
-            'Work Hours': ttk.Label(stats_frame, text="Work Hours:"),
-            'Overtime': ttk.Label(stats_frame, text="Overtime:"),
-            'Vacation Days': ttk.Label(stats_frame, text="Vacation Days:"),
-            'Sick Days': ttk.Label(stats_frame, text="Sick Days:"),
-            'YTD Work Hours': ttk.Label(stats_frame, text="YTD Work Hours:"),
-            'YTD Overtime': ttk.Label(stats_frame, text="YTD Overtime:")
-        }
-
-        # Stats values
-        self.stats_values = {
-            'Work Hours': ttk.Label(stats_frame, text="", foreground='blue'),
-            'Overtime': ttk.Label(stats_frame, text="", foreground='blue'),
-            'Vacation Days': ttk.Label(stats_frame, text="", foreground='blue'),
-            'Sick Days': ttk.Label(stats_frame, text="", foreground='blue'),
-            'YTD Work Hours': ttk.Label(stats_frame, text="", foreground='blue'),
-            'YTD Overtime': ttk.Label(stats_frame, text="", foreground='blue')
-        }
-
-        # Grid layout for stats
-        self.stats_labels['Current Month'].grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        for i, (key, label) in enumerate(self.stats_labels.items()):
-            if key != 'Current Month':
-                label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
-                self.stats_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
-
-        # Initialize the combo box
-        self.update_details_combo()
-
-    def create_employee_details_window(self):
-        """Create a standalone window to display details of the selected employee"""
-        # Get selected employee
-        selection = self.emp_tree.selection()
-        if not selection:
-            messagebox.showwarning("Warning", "Please select an employee first.")
-            return
-
-        item = self.emp_tree.item(selection[0])
-        employee_id = item['values'][0] 
-
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM employees WHERE employee_id = ?", (employee_id,))
-        employee = cursor.fetchone()
-        conn.close()
-
-        if not employee:
-            messagebox.showerror("Error", "Selected employee not found in database")
-            return
-
-        details_window = tk.Toplevel(self.root)
-        details_window.title(f"Employee Details - {employee[1]} ({employee[2]})")
-        details_window.geometry("500x450")
-        details_window.transient(self.root)
-        details_window.grab_set()
-
-        details_window.protocol("WM_DELETE_WINDOW", details_window.destroy)
-
-        container = ttk.Frame(details_window)
-        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        header_frame = ttk.Frame(container)
-        header_frame.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(header_frame, 
-                 text=f"{employee[1]} ({employee[2]})", 
-                 font=('Arial', 12, 'bold')).pack(side=tk.LEFT)
-
-        ttk.Button(
-            header_frame,
-            text="Close",
-            command=details_window.destroy
-        ).pack(side=tk.RIGHT)
-
-        details_notebook = ttk.Notebook(container)
-        details_notebook.pack(fill=tk.BOTH, expand=True)
-
-        personal_frame = ttk.Frame(details_notebook)
-        details_notebook.add(personal_frame, text="Personal Info")
-
-        personal_info = [
-            ("Name:", employee[1]),
-            ("Employee ID:", employee[2]),
-            ("Position:", employee[3] if employee[3] else "N/A"),
-            ("Hourly Rate:", f"${employee[4]:.2f}" if employee[4] else "N/A"),
-            ("Email:", employee[5] if employee[5] else "N/A"),
-            ("Hire Date:", employee[6] if employee[6] else "N/A"),
-            ("Status:", "Active" if employee[10] else "Inactive")
-        ]
-
-        for row, (label, value) in enumerate(personal_info):
-            ttk.Label(personal_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
-            ttk.Label(personal_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
-
-        work_frame = ttk.Frame(details_notebook)
-        details_notebook.add(work_frame, text="Work Details")
-
-        current_year = datetime.now().year
-        start_of_year = date(current_year, 1, 1)
-
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT COUNT(*) FROM time_records 
-            WHERE employee_id = ? AND date >= ? AND record_type = 'vacation'
-        ''', (employee[0], start_of_year))
-        vacation_used = cursor.fetchone()[0]
-
-        cursor.execute('''
-            SELECT COUNT(*) FROM time_records 
-            WHERE employee_id = ? AND date >= ? AND record_type = 'sick'
-        ''', (employee[0], start_of_year))
-        sick_used = cursor.fetchone()[0]
-        conn.close()
-
-        vacation_remaining = max(0, (employee[8] if len(employee) > 8 else 20)) - vacation_used
-        sick_remaining = max(0, (employee[9] if len(employee) > 9 else 10) - sick_used)
-
-        work_info = [
-            ("Hours/Week:", f"{employee[7]:.1f}" if len(employee) > 7 else "40.0"),
-            ("Vacation Days/Year:", str(employee[8]) if len(employee) > 8 else "20"),
-            ("Sick Days/Year:", str(employee[9]) if len(employee) > 9 else "10"),
-            ("Vacation Days Remaining:", f"{vacation_remaining}"),
-            ("Sick Days Remaining:", f"{sick_remaining}")
-        ]
-
-        for row, (label, value) in enumerate(work_info):
-            ttk.Label(work_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
-            ttk.Label(work_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
-
-        stats_frame = ttk.Frame(details_notebook)
-        details_notebook.add(stats_frame, text="Statistics")
-
-        current_month = datetime.now().month
-        monthly_summary = self.time_tracker.calculate_monthly_summary(employee[0], current_year, current_month)
-        yearly_summary = self.time_tracker.calculate_yearly_summary(employee[0], current_year)
-
-        stats_info = [
-            (f"{calendar.month_name[current_month]} {current_year}:", ""),
-            ("Work Hours:", f"{monthly_summary['total_work_hours']:.1f}"),
-            ("Overtime:", f"{monthly_summary['total_overtime']:.1f}"),
-            ("Vacation Days:", str(monthly_summary['vacation_days'])),
-            ("Sick Days:", str(monthly_summary['sick_days'])),
-            ("YTD Work Hours:", f"{yearly_summary['total_work_hours']:.1f}"),
-            ("YTD Overtime:", f"{yearly_summary['total_overtime']:.1f}")
-        ]
-
-        for row, (label, value) in enumerate(stats_info):
-            ttk.Label(stats_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
-            if value:  # Skip empty value for header row
-                ttk.Label(stats_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
 
     def update_details_combo(self):
         """Update the employee combobox in details tab"""
