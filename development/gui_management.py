@@ -461,9 +461,41 @@ class EmployeeTimeApp:
         
         self.db_path_var = tk.StringVar(value=self.db_manager.db_name)
         ttk.Entry(db_path_frame, textvariable=self.db_path_var, width=60).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        #ttk.Button(db_path_frame, text="Browse", command=self.browse_database).pack(side=tk.RIGHT, padx=(5, 0)) #TODO: implement later!
+        ttk.Button(db_path_frame, text="Browse", command=self.browse_database).pack(side=tk.RIGHT, padx=(5, 0)) #TODO: implement later!
         
-        # Default settings
+        # Template Generation Settings
+        template_frame = ttk.LabelFrame(main_container, text="Template Generation")
+        template_frame.pack(fill=tk.X, pady=(0, 20))
+
+        # Template settings grid
+        template_grid = ttk.Frame(template_frame)
+        template_grid.pack(padx=10, pady=10, fill=tk.X)
+
+        # Language selection
+        ttk.Label(template_grid, text="Language:").grid(row=0, column=0, sticky='w', pady=2)
+        self.template_lang_var = tk.StringVar(value="en")
+        lang_combobox = ttk.Combobox(template_grid, textvariable=self.template_lang_var, 
+                                   values=["en", "de"], width=8, state="readonly")
+        lang_combobox.grid(row=0, column=1, sticky='w', padx=(5, 20), pady=2)
+
+        # Template style selection
+        ttk.Label(template_grid, text="Template Style:").grid(row=0, column=2, sticky='w', pady=2)
+        self.template_style_var = tk.StringVar(value="color")
+        style_combobox = ttk.Combobox(template_grid, textvariable=self.template_style_var, 
+                                     values=["color", "black-white"], width=12, state="readonly")
+        style_combobox.grid(row=0, column=3, sticky='w', padx=5, pady=2)
+
+        # Output path selection 
+        ttk.Label(template_grid, text="Default Output Path:").grid(row=2, column=0, sticky='w', pady=(10, 2))
+
+        output_path_frame = ttk.Frame(template_grid)
+        output_path_frame.grid(row=2, column=1, columnspan=3, sticky='ew', pady=(15, 2))
+
+        self.output_path_var = tk.StringVar(value=os.path.expanduser("~/Documents"))
+        ttk.Entry(output_path_frame, textvariable=self.output_path_var, width=60).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(output_path_frame, text="Browse", command=self.browse_output_path).pack(side=tk.RIGHT, padx=(5, 0))
+
+        # Default settings (your existing code)
         defaults_frame = ttk.LabelFrame(main_container, text="Default Settings")
         defaults_frame.pack(fill=tk.X, pady=(0, 20))
         
@@ -1032,6 +1064,36 @@ class EmployeeTimeApp:
         
         self.update_date_display()
         self.update_view_period_if_needed()
+
+    def browse_database(self):
+        """Open file dialog to select database location"""
+        from tkinter import filedialog
+
+        # Open file dialog to select .db file
+        file_path = filedialog.asksaveasfilename(
+            title="Select Database File",
+            defaultextension=".db",
+            filetypes=[("Database files", "*.db"), ("All files", "*.*")],
+            initialfile=self.db_path_var.get()  # Start with current path if any
+        )
+
+        # If user didn't cancel the dialog
+        if file_path:
+            self.db_path_var.set(file_path)
+
+    def browse_output_path(self):
+        """Open directory dialog to select output path for generated PDFs"""
+        from tkinter import filedialog
+
+        # Open directory dialog
+        dir_path = filedialog.askdirectory(
+            title="Select Default Output Directory",
+            initialdir=self.output_path_var.get()  # Start with current path if any
+        )
+
+        # If user didn't cancel the dialog
+        if dir_path:
+            self.output_path_var.set(dir_path)
 
   # =============================================================================
   #  TIME MANAGEMENT METHODS
