@@ -16,15 +16,15 @@ class DatabaseManager:
     def __init__(self, db_name="data/employee_time.db"):
         self.db_name = db_name
         self.init_database()
-    
+
     def init_database(self):
         """Initialize database with required tables"""
         # Ensure data directory exists
         os.makedirs(os.path.dirname(self.db_name), exist_ok=True)
-        
+
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
-        
+
         # Employees table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS employees (
@@ -43,7 +43,7 @@ class DatabaseManager:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+
         # Time records table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS time_records (
@@ -59,7 +59,7 @@ class DatabaseManager:
                 FOREIGN KEY (employee_id) REFERENCES employees (id)
             )
         ''')
-        
+
         # Settings table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS settings (
@@ -69,20 +69,66 @@ class DatabaseManager:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+
+        # Report settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS report_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lang TEXT CHECK(lang IN ('de', 'en')) DEFAULT 'en',
+                template TEXT CHECK(template IN ('color', 'black-white')) DEFAULT 'color',
+                default_output_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Company data table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS company_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                companyname TEXT NOT NULL,
+                companystreet TEXT,
+                companycity TEXT,
+                companyphone TEXT,
+                companyemail TEXT,
+                company_color_1 TEXT CHECK(company_color_1 GLOB '#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'),
+                company_color_2 TEXT CHECK(company_color_2 GLOB '#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'),
+                company_color_3 TEXT CHECK(company_color_3 GLOB '#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Insert default settings
         default_settings = [
             ('standard_hours_per_day', '8.0'),
-            ('overtime_threshold', '40.0'),
-            ('vacation_days_per_year', '20'),
+            ('overtime_threshold', '200.0'),
+            ('vacation_days_per_year', '30'),
             ('sick_days_per_year', '10'),
             ('business_days_per_week', '5')
         ]
-        
+
         cursor.executemany('''
             INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)
         ''', default_settings)
-        
+
+        # Insert default report settings (only if no record exists)
+        cursor.execute('''
+            INSERT OR IGNORE INTO report_settings (id, lang, template, default_output_path) 
+            VALUES (1, 'en', 'color', './reports/')
+        ''')
+
+        # Insert default company data (only if no record exists)
+        cursor.execute('''
+            INSERT OR IGNORE INTO company_data (
+                id, companyname, companystreet, companycity, companyphone, companyemail,
+                company_color_1, company_color_2, company_color_3
+            ) VALUES (
+                1, 'Meine Firma GmbH', 'Geschäftsstraße 123', '10115 Berlin', 
+                '+49-30-1234567', 'contact@meinefirma.com', '#1E40AF', '#3B82F6', '#93C5FD'
+            )
+        ''')
+
         conn.commit()
         conn.close()
     
