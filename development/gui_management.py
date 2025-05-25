@@ -190,7 +190,7 @@ class EmployeeTimeApp:
         self.emp_combo.pack(side=tk.LEFT, padx=(5, 20))
         self.emp_combo.bind('<<ComboboxSelected>>', self.on_employee_select)
 
-        # Month/Year selection
+        # Month/Year selection #TODO: MAKE THIS INTO FRAME
         self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
         ttk.Label(emp_row, textvariable=self.period_display_var, style='Info.TLabel').pack(side=tk.LEFT, padx=(5, 20))
 
@@ -199,14 +199,14 @@ class EmployeeTimeApp:
         # month_spin = tk.Spinbox(emp_row, from_=1, to=12, textvariable=self.month_var, width=5)
         # month_spin.pack(side=tk.LEFT, padx=(5, 10))
 
-        ttk.Label(emp_row, text="Year:").pack(side=tk.LEFT)
-        self.year_var = tk.IntVar(value=self.current_year)
-        year_spin = tk.Spinbox(emp_row, from_=2020, to=2030, textvariable=self.year_var, width=8)
-        year_spin.pack(side=tk.LEFT, padx=(5, 20))
+        # ttk.Label(emp_row, text="Year:").pack(side=tk.LEFT)
+        # self.year_var = tk.IntVar(value=self.current_year)
+        # year_spin = tk.Spinbox(emp_row, from_=2020, to=2030, textvariable=self.year_var, width=8)
+        # year_spin.pack(side=tk.LEFT, padx=(5, 20))
 
         ttk.Button(emp_row, text="Load Month Data", command=self.load_month_data).pack(side=tk.LEFT, padx=5)
 
-        # Time entry section
+        # Time entry section #TODO: MAKE THIS INTO FRAME
         entry_frame = ttk.LabelFrame(main_container, text="Add/Edit Time Entry")
         entry_frame.pack(fill=tk.X, pady=(0, 10))
 
