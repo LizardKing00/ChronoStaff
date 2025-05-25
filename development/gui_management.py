@@ -14,6 +14,83 @@ import os
 import base64
 
 # =============================================================================
+# DATE MANAGER
+# =============================================================================
+
+class DateManager:
+    """Centralized date management for the application"""
+    
+    def __init__(self):
+        self.reset_to_today()
+    
+    def reset_to_today(self):
+        """Reset all dates to today's date"""
+        today = date.today()
+        self._selected_date = today
+        self._view_month = today.month
+        self._view_year = today.year
+    
+    @property
+    def selected_date(self):
+        """Get the currently selected date for time entry"""
+        return self._selected_date
+    
+    @selected_date.setter
+    def selected_date(self, new_date):
+        """Set the selected date and validate it"""
+        if isinstance(new_date, date):
+            self._selected_date = new_date
+        elif isinstance(new_date, str):
+            try:
+                self._selected_date = datetime.strptime(new_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise ValueError(f"Invalid date format: {new_date}")
+        else:
+            raise TypeError("Date must be a date object or YYYY-MM-DD string")
+    
+    @property
+    def view_month(self):
+        """Get the current month being viewed"""
+        return self._view_month
+    
+    @property
+    def view_year(self):
+        """Get the current year being viewed"""
+        return self._view_year
+    
+    def set_view_period(self, month, year):
+        """Set the month/year being viewed for time records"""
+        if not (1 <= month <= 12):
+            raise ValueError(f"Invalid month: {month}")
+        if not (2020 <= year <= 2030):
+            raise ValueError(f"Invalid year: {year}")
+        
+        self._view_month = month
+        self._view_year = year
+    
+    def set_date_components(self, day, month, year):
+        """Set date from individual components with validation"""
+        try:
+            # Validate the date by creating it
+            new_date = date(year, month, day)
+            self._selected_date = new_date
+            return True, ""
+        except ValueError as e:
+            return False, str(e)
+    
+    def get_date_components(self):
+        """Get the selected date as (day, month, year) tuple"""
+        return (self._selected_date.day, self._selected_date.month, self._selected_date.year)
+    
+    def get_formatted_date(self, format_str="%Y-%m-%d"):
+        """Get the selected date in specified format"""
+        return self._selected_date.strftime(format_str)
+    
+    def get_display_date(self):
+        """Get a user-friendly display of the selected date"""
+        return self._selected_date.strftime("%A, %B %d, %Y")
+
+# =============================================================================
 # MAIN APPLICATION GUI
 # =============================================================================
 
@@ -23,29 +100,58 @@ class EmployeeTimeApp:
         self.root = root
         self.root.title("Chrono Staff")
         self.root.geometry("1200x800")
-        self.date_var = tk.StringVar()
-        self.date_display_var = tk.StringVar()        
 
         # Initialize database and managers
         self.db_manager = DatabaseManager()
         self.employee_manager = EmployeeManager(self.db_manager)
         self.time_tracker = TimeTracker(self.db_manager)
+        self.date_manager = DateManager()
         
         # Current selections
         self.selected_employee = None
         self.selected_employee_id = None
-        self.current_month = datetime.now().month
-        self.current_year = datetime.now().year
-        
+
+        # UI Variables
+        self.setup_ui_variables()
+
         # Style configuration
         self.configure_styles()
         self.create_widgets()
+
+                
+        # Initialize UI with current date
+        self.update_date_display()
  
+    def setup_ui_variables(self):
+        """Initialize all UI variables"""
+        # Date component variables
+        day, month, year = self.date_manager.get_date_components()
+        self.day_var = tk.IntVar(value=day)
+        self.month_var = tk.IntVar(value=month)
+        self.year_var = tk.IntVar(value=year)
+        
+        # Display variables
+        self.date_display_var = tk.StringVar()
+        self.period_display_var = tk.StringVar()
+        
+        # Entry variables
+        self.emp_var = tk.StringVar()
+        self.hours_var = tk.DoubleVar()
+        self.type_var = tk.StringVar(value="work")
+        self.notes_var = tk.StringVar()
+        
+        # Bind variable changes to update methods
+        self.day_var.trace('w', self.on_date_component_change)
+        self.month_var.trace('w', self.on_date_component_change)
+        self.year_var.trace('w', self.on_date_component_change)
+
     def configure_styles(self):
         """Configure custom styles for the application"""
         style = ttk.Style()
         style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
         style.configure('Title.TLabel', font=('Arial', 14, 'bold'))
+        style.configure('Info.TLabel', font=('Arial', 10), foreground='blue')
+        style.configure('Error.TLabel', font=('Arial', 10), foreground='red')
     
     def create_widgets(self):
         """Create main GUI widgets"""
@@ -61,6 +167,96 @@ class EmployeeTimeApp:
         self.create_settings_tab()
         self.create_employee_details_tab()
     
+  # =============================================================================
+  # DATE MANAGEMENT METHODS
+  # =============================================================================
+    
+    def on_date_component_change(self, *args):
+        """Handle changes to date component spinboxes"""
+        try:
+            day = self.day_var.get()
+            month = self.month_var.get()
+            year = self.year_var.get()
+            
+            success, error_msg = self.date_manager.set_date_components(day, month, year)
+            if success:
+                self.update_date_display()
+                self.update_view_period_if_needed()
+            else:
+                # Show error but don't crash
+                self.date_display_var.set(f"Invalid date: {error_msg}")
+        except tk.TclError:
+            # Handle spinbox in transition state
+            pass
+    
+    def update_date_display(self):
+        """Update the date display with current selected date"""
+        try:
+            display_text = self.date_manager.get_display_date()
+            self.date_display_var.set(display_text)
+        except Exception:
+            self.date_display_var.set("Invalid date")
+    
+    def update_view_period_if_needed(self):
+        """Update view period if the selected date is in a different month/year"""
+        selected_date = self.date_manager.selected_date
+        if (selected_date.month != self.date_manager.view_month or 
+            selected_date.year != self.date_manager.view_year):
+            
+            self.date_manager.set_view_period(selected_date.month, selected_date.year)
+            self.update_period_display()
+            if self.selected_employee:
+                self.load_time_records()
+    
+    def update_period_display(self):
+        """Update the period display label"""
+        self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
+    
+    def set_to_today(self):
+        """Set the selected date to today"""
+        self.date_manager.reset_to_today()
+        day, month, year = self.date_manager.get_date_components()
+        
+        # Update UI variables without triggering events
+        self.day_var.set(day)
+        self.month_var.set(month)
+        self.year_var.set(year)
+        
+        self.update_date_display()
+        self.update_view_period_if_needed()
+    
+    def go_to_current_month(self):
+        """Set view period to current month/year"""
+        today = date.today()
+        self.date_manager.set_view_period(today.month, today.year)
+        self.update_period_display()
+        if self.selected_employee:
+            self.load_time_records()
+    
+    def open_calendar(self):
+        """Open calendar popup for date selection"""
+        try:
+            calendar_dialog = CalendarDialog(self.root, self.date_manager.selected_date)
+            selected_date = calendar_dialog.show()
+            
+            if selected_date:
+                self.date_manager.selected_date = selected_date
+                day, month, year = self.date_manager.get_date_components()
+                
+                # Update spinboxes
+                self.day_var.set(day)
+                self.month_var.set(month)
+                self.year_var.set(year)
+                
+                self.update_date_display()
+                self.update_view_period_if_needed()
+        except Exception as e:
+            messagebox.showerror("Calendar Error", f"Could not open calendar: {str(e)}")
+    
+  # =============================================================================
+  # TAB CREATION METHODS
+  # =============================================================================
+
     def create_employees_tab(self):
         """Create employee management tab"""
         emp_frame = ttk.Frame(self.notebook)
@@ -135,136 +331,22 @@ class EmployeeTimeApp:
         ttk.Button(right_btn_frame, text="Refresh", command=self.refresh_employee_list).pack(side=tk.LEFT, padx=(5, 0))
         
         self.refresh_employee_list()
-    
+
     def create_time_tracking_tab(self):
         """Create time tracking tab"""
-        time_frame = ttk.Frame(self.notebook)
-        self.notebook.add(time_frame, text="Time Tracking")
 
-        # Main container
-        main_container = ttk.Frame(time_frame)
-        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        time_frame = ttk.Frame(self.root)
+        time_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # Employee selection frame
-        select_frame = ttk.LabelFrame(main_container, text="Employee & Period Selection")
-        select_frame.pack(fill=tk.X, pady=(0, 10))
-
-        # Employee selection row
-        emp_row = ttk.Frame(select_frame)
-        emp_row.pack(fill=tk.X, padx=10, pady=5)
-
-        ttk.Label(emp_row, text="Employee:").pack(side=tk.LEFT)
-        self.emp_var = tk.StringVar()
-        self.emp_combo = ttk.Combobox(emp_row, textvariable=self.emp_var, width=40, state="readonly")
-        self.emp_combo.pack(side=tk.LEFT, padx=(5, 20))
-        self.emp_combo.bind('<<ComboboxSelected>>', self.on_employee_select)
-
-        # Month/Year selection
-        ttk.Label(emp_row, text="Month:").pack(side=tk.LEFT)
-        self.month_var = tk.IntVar(value=self.current_month)
-        month_spin = tk.Spinbox(emp_row, from_=1, to=12, textvariable=self.month_var, width=5)
-        month_spin.pack(side=tk.LEFT, padx=(5, 10))
-
-        ttk.Label(emp_row, text="Year:").pack(side=tk.LEFT)
-        self.year_var = tk.IntVar(value=self.current_year)
-        year_spin = tk.Spinbox(emp_row, from_=2020, to=2030, textvariable=self.year_var, width=8)
-        year_spin.pack(side=tk.LEFT, padx=(5, 20))
-
-        ttk.Button(emp_row, text="Load Month Data", command=self.load_month_data).pack(side=tk.LEFT, padx=5)
-
+        self.create_employee_selection_frame(time_frame)
+        
         # Time entry section
-        entry_frame = ttk.LabelFrame(main_container, text="Add/Edit Time Entry")
-        entry_frame.pack(fill=tk.X, pady=(0, 10))
-
-        # First row - Date and basic info
-        date_row = ttk.Frame(entry_frame)
-        date_row.pack(fill=tk.X, padx=10, pady=5)
-
-        ttk.Label(date_row, text="Date:").pack(side=tk.LEFT)
-        self.date_display_var = tk.StringVar()
-
-        # Date entry fields
-        self.day_var = tk.IntVar(value=date.today().day)
-        self.date_month_var = tk.IntVar(value=date.today().month)
-        self.date_year_var = tk.IntVar(value=date.today().year)
-
-        # formatted date (YYYY-MM-DD)
-        self.date_var = tk.StringVar()
-        self.update_date_display()
-
-        day_spin = tk.Spinbox(date_row, from_=1, to=31, textvariable=self.day_var, width=4)
-        day_spin.pack(side=tk.LEFT, padx=2)
-        ttk.Label(date_row, text="/").pack(side=tk.LEFT)
-
-        month_spin = tk.Spinbox(date_row, from_=1, to=12, textvariable=self.date_month_var, width=4)
-        month_spin.pack(side=tk.LEFT, padx=2)
-        ttk.Label(date_row, text="/").pack(side=tk.LEFT)
-
-        year_spin = tk.Spinbox(date_row, from_=2020, to=2030, textvariable=self.date_year_var, width=6)
-        year_spin.pack(side=tk.LEFT, padx=2)
-
-        # Calendar button #TODO: this icon is ugly, change this 
-        ttk.Button(date_row, text="📅", width=3, command=self.open_calendar).pack(side=tk.LEFT, padx=5)
-
-        # Display selected date
-        self.date_display_var = tk.StringVar()
-        self.update_date_display()
-        ttk.Label(date_row, textvariable=self.date_display_var, foreground='blue').pack(side=tk.LEFT, padx=10)
-
-        # Hours and type
-        ttk.Label(date_row, text="Hours:").pack(side=tk.LEFT, padx=(20, 0))
-        self.hours_var = tk.DoubleVar()
-        ttk.Entry(date_row, textvariable=self.hours_var, width=8).pack(side=tk.LEFT, padx=5)
-
-        ttk.Label(date_row, text="Type:").pack(side=tk.LEFT, padx=(10, 0))
-        self.type_var = tk.StringVar(value="work")
-        type_combo = ttk.Combobox(date_row, textvariable=self.type_var, 
-                                 values=["work", "vacation", "sick", "holiday"], width=10, state="readonly")
-        type_combo.pack(side=tk.LEFT, padx=5)
-
-        # Second row - Notes and buttons
-        notes_row = ttk.Frame(entry_frame)
-        notes_row.pack(fill=tk.X, padx=10, pady=5)
-
-        ttk.Label(notes_row, text="Notes:").pack(side=tk.LEFT)
-        self.notes_var = tk.StringVar()
-        ttk.Entry(notes_row, textvariable=self.notes_var, width=50).pack(side=tk.LEFT, padx=(5, 20))
-
-        ttk.Button(notes_row, text="Add Entry", command=self.add_time_entry).pack(side=tk.RIGHT, padx=5)
-
-        # Bind events to update date display
-        for widget in [day_spin, month_spin, year_spin]:
-            widget.bind('<FocusOut>', lambda e: self.update_date_display())
-            widget.bind('<KeyRelease>', lambda e: self.root.after(100, self.update_date_display))
-
+        self.create_time_entry_frame(time_frame)
+        
         # Time records display
-        records_frame = ttk.LabelFrame(main_container, text="Time Records")
-        records_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Time records treeview
-        time_columns = ('Date', 'Hours', 'Overtime', 'Type', 'Notes')
-        self.time_tree = ttk.Treeview(records_frame, columns=time_columns, show='headings', height=10)
-
-        time_widths = {'Date': 100, 'Hours': 80, 'Overtime': 80, 'Type': 100, 'Notes': 200}
-        for col in time_columns:
-            self.time_tree.heading(col, text=col)
-            self.time_tree.column(col, width=time_widths.get(col, 100))
-
-        time_scrollbar = ttk.Scrollbar(records_frame, orient=tk.VERTICAL, command=self.time_tree.yview)
-        self.time_tree.configure(yscrollcommand=time_scrollbar.set)
-
-        self.time_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-        time_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=10)
-
-        # Time records buttons
-        time_btn_frame = ttk.Frame(records_frame)
-        time_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-
-        ttk.Button(time_btn_frame, text="Edit Selected", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
-        ttk.Button(time_btn_frame, text="Delete Selected", command=self.delete_time_entry).pack(side=tk.LEFT, padx=5)
-
-        self.update_employee_combo()
-
+        self.create_time_records_frame(time_frame)
+    
     def create_reports_tab(self):
         """Create reports tab"""
         reports_frame = ttk.Frame(self.notebook)
@@ -469,25 +551,452 @@ class EmployeeTimeApp:
         ttk.Button(settings_btn_frame, text="Save Settings", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Button(settings_btn_frame, text="Reset to Defaults", command=self.not_yet_implemented).pack(side=tk.LEFT)
     
-    def open_calendar(self):
-        """Open calendar popup for date selection"""
-        try:
-            initial_date = date(self.year_var.get(), self.month_var.get(), self.day_var.get())
-        except ValueError:
-            initial_date = date.today()
-        
-        calendar_dialog = CalendarDialog(self.root, initial_date)
-        selected_date = calendar_dialog.show()
-        
-        if selected_date:
-            self.day_var.set(selected_date.day)
-            self.month_var.set(selected_date.month)
-            self.year_var.set(selected_date.year)
-            self.update_date_display()
+    def create_employee_details_tab(self):
+        """Create a tab to display detailed employee information"""
+        details_frame = ttk.Frame(self.notebook)
+        self.notebook.add(details_frame, text="Employee Details")
 
-    # =============================================================================
-    # HELPER METHODS
-    # =============================================================================
+        # Main container frame
+        container = ttk.Frame(details_frame)
+        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Employee selection
+        selection_frame = ttk.Frame(container)
+        selection_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(selection_frame, text="Select Employee:").pack(side=tk.LEFT)
+        self.details_emp_var = tk.StringVar()
+        self.details_emp_combo = ttk.Combobox(
+            selection_frame, 
+            textvariable=self.details_emp_var, 
+            width=30,
+            state='readonly'
+        )
+        self.details_emp_combo.pack(side=tk.LEFT, padx=5)
+        self.details_emp_combo.bind('<<ComboboxSelected>>', self.load_employee_details)
+
+        # Refresh button
+        ttk.Button(
+            selection_frame, 
+            text="Refresh", 
+            command=self.update_details_combo
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Details display notebook
+        details_notebook = ttk.Notebook(container)
+        details_notebook.pack(fill=tk.BOTH, expand=True)
+
+        # Personal Info Tab
+        personal_frame = ttk.Frame(details_notebook)
+        details_notebook.add(personal_frame, text="Personal Info")
+
+        # Create labels for personal info
+        self.personal_info_labels = {
+            'Name': ttk.Label(personal_frame, text="Name:"),
+            'Employee ID': ttk.Label(personal_frame, text="Employee ID:"),
+            'Position': ttk.Label(personal_frame, text="Position:"),
+            'Hourly Rate': ttk.Label(personal_frame, text="Hourly Rate:"),
+            'Email': ttk.Label(personal_frame, text="Email:"),
+            'Hire Date': ttk.Label(personal_frame, text="Hire Date:"),
+            'Status': ttk.Label(personal_frame, text="Status:")
+        }
+
+        # Corresponding value labels
+        self.personal_info_values = {
+            'Name': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Employee ID': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Position': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Hourly Rate': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Email': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Hire Date': ttk.Label(personal_frame, text="", foreground='blue'),
+            'Status': ttk.Label(personal_frame, text="", foreground='blue')
+        }
+
+        # Grid layout for personal info
+        for i, (key, label) in enumerate(self.personal_info_labels.items()):
+            label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
+            self.personal_info_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
+
+        # Work Details Tab
+        work_frame = ttk.Frame(details_notebook)
+        details_notebook.add(work_frame, text="Work Details")
+
+        # Work details labels
+        self.work_info_labels = {
+            'Hours/Week': ttk.Label(work_frame, text="Hours/Week:"),
+            'Vacation Days/Year': ttk.Label(work_frame, text="Vacation Days/Year:"),
+            'Sick Days/Year': ttk.Label(work_frame, text="Sick Days/Year:"),
+            'Vacation Days Remaining': ttk.Label(work_frame, text="Vacation Days Remaining:"),
+            'Sick Days Remaining': ttk.Label(work_frame, text="Sick Days Remaining:")
+        }
+
+        # Work details values
+        self.work_info_values = {
+            'Hours/Week': ttk.Label(work_frame, text="", foreground='blue'),
+            'Vacation Days/Year': ttk.Label(work_frame, text="", foreground='blue'),
+            'Sick Days/Year': ttk.Label(work_frame, text="", foreground='blue'),
+            'Vacation Days Remaining': ttk.Label(work_frame, text="", foreground='blue'),
+            'Sick Days Remaining': ttk.Label(work_frame, text="", foreground='blue')
+        }
+
+        # Grid layout for work info
+        for i, (key, label) in enumerate(self.work_info_labels.items()):
+            label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
+            self.work_info_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
+
+        # Stats Tab
+        stats_frame = ttk.Frame(details_notebook)
+        details_notebook.add(stats_frame, text="Statistics")
+
+        # Current month/year
+        current_month = datetime.now().month
+        current_year = datetime.now().year
+
+        # Stats labels
+        self.stats_labels = {
+            'Current Month': ttk.Label(stats_frame, text=f"{calendar.month_name[current_month]} {current_year}:"),
+            'Work Hours': ttk.Label(stats_frame, text="Work Hours:"),
+            'Overtime': ttk.Label(stats_frame, text="Overtime:"),
+            'Vacation Days': ttk.Label(stats_frame, text="Vacation Days:"),
+            'Sick Days': ttk.Label(stats_frame, text="Sick Days:"),
+            'YTD Work Hours': ttk.Label(stats_frame, text="YTD Work Hours:"),
+            'YTD Overtime': ttk.Label(stats_frame, text="YTD Overtime:")
+        }
+
+        # Stats values
+        self.stats_values = {
+            'Work Hours': ttk.Label(stats_frame, text="", foreground='blue'),
+            'Overtime': ttk.Label(stats_frame, text="", foreground='blue'),
+            'Vacation Days': ttk.Label(stats_frame, text="", foreground='blue'),
+            'Sick Days': ttk.Label(stats_frame, text="", foreground='blue'),
+            'YTD Work Hours': ttk.Label(stats_frame, text="", foreground='blue'),
+            'YTD Overtime': ttk.Label(stats_frame, text="", foreground='blue')
+        }
+
+        # Grid layout for stats
+        self.stats_labels['Current Month'].grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        for i, (key, label) in enumerate(self.stats_labels.items()):
+            if key != 'Current Month':
+                label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
+                self.stats_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
+
+        # Initialize the combo box
+        self.update_details_combo()
+
+    def create_employee_details_window(self):
+        """Create a standalone window to display details of the selected employee"""
+        # Get selected employee
+        selection = self.emp_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select an employee first.")
+            return
+
+        item = self.emp_tree.item(selection[0])
+        employee_id = item['values'][0] 
+
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM employees WHERE employee_id = ?", (employee_id,))
+        employee = cursor.fetchone()
+        conn.close()
+
+        if not employee:
+            messagebox.showerror("Error", "Selected employee not found in database")
+            return
+
+        details_window = tk.Toplevel(self.root)
+        details_window.title(f"Employee Details - {employee[1]} ({employee[2]})")
+        details_window.geometry("500x450")
+        details_window.transient(self.root)
+        details_window.grab_set()
+
+        details_window.protocol("WM_DELETE_WINDOW", details_window.destroy)
+
+        container = ttk.Frame(details_window)
+        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        header_frame = ttk.Frame(container)
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(header_frame, 
+                 text=f"{employee[1]} ({employee[2]})", 
+                 font=('Arial', 12, 'bold')).pack(side=tk.LEFT)
+
+        ttk.Button(
+            header_frame,
+            text="Close",
+            command=details_window.destroy
+        ).pack(side=tk.RIGHT)
+
+        details_notebook = ttk.Notebook(container)
+        details_notebook.pack(fill=tk.BOTH, expand=True)
+
+        personal_frame = ttk.Frame(details_notebook)
+        details_notebook.add(personal_frame, text="Personal Info")
+
+        personal_info = [
+            ("Name:", employee[1]),
+            ("Employee ID:", employee[2]),
+            ("Position:", employee[3] if employee[3] else "N/A"),
+            ("Hourly Rate:", f"${employee[4]:.2f}" if employee[4] else "N/A"),
+            ("Email:", employee[5] if employee[5] else "N/A"),
+            ("Hire Date:", employee[6] if employee[6] else "N/A"),
+            ("Status:", "Active" if employee[10] else "Inactive")
+        ]
+
+        for row, (label, value) in enumerate(personal_info):
+            ttk.Label(personal_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+            ttk.Label(personal_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        work_frame = ttk.Frame(details_notebook)
+        details_notebook.add(work_frame, text="Work Details")
+
+        current_year = datetime.now().year
+        start_of_year = date(current_year, 1, 1)
+
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT COUNT(*) FROM time_records 
+            WHERE employee_id = ? AND date >= ? AND record_type = 'vacation'
+        ''', (employee[0], start_of_year))
+        vacation_used = cursor.fetchone()[0]
+
+        cursor.execute('''
+            SELECT COUNT(*) FROM time_records 
+            WHERE employee_id = ? AND date >= ? AND record_type = 'sick'
+        ''', (employee[0], start_of_year))
+        sick_used = cursor.fetchone()[0]
+        conn.close()
+
+        vacation_remaining = max(0, (employee[8] if len(employee) > 8 else 20)) - vacation_used
+        sick_remaining = max(0, (employee[9] if len(employee) > 9 else 10) - sick_used)
+
+        work_info = [
+            ("Hours/Week:", f"{employee[7]:.1f}" if len(employee) > 7 else "40.0"),
+            ("Vacation Days/Year:", str(employee[8]) if len(employee) > 8 else "20"),
+            ("Sick Days/Year:", str(employee[9]) if len(employee) > 9 else "10"),
+            ("Vacation Days Remaining:", f"{vacation_remaining}"),
+            ("Sick Days Remaining:", f"{sick_remaining}")
+        ]
+
+        for row, (label, value) in enumerate(work_info):
+            ttk.Label(work_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+            ttk.Label(work_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+        stats_frame = ttk.Frame(details_notebook)
+        details_notebook.add(stats_frame, text="Statistics")
+
+        current_month = datetime.now().month
+        monthly_summary = self.time_tracker.calculate_monthly_summary(employee[0], current_year, current_month)
+        yearly_summary = self.time_tracker.calculate_yearly_summary(employee[0], current_year)
+
+        stats_info = [
+            (f"{calendar.month_name[current_month]} {current_year}:", ""),
+            ("Work Hours:", f"{monthly_summary['total_work_hours']:.1f}"),
+            ("Overtime:", f"{monthly_summary['total_overtime']:.1f}"),
+            ("Vacation Days:", str(monthly_summary['vacation_days'])),
+            ("Sick Days:", str(monthly_summary['sick_days'])),
+            ("YTD Work Hours:", f"{yearly_summary['total_work_hours']:.1f}"),
+            ("YTD Overtime:", f"{yearly_summary['total_overtime']:.1f}")
+        ]
+
+        for row, (label, value) in enumerate(stats_info):
+            ttk.Label(stats_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
+            if value:  # Skip empty value for header row
+                ttk.Label(stats_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
+
+    def create_edit_window(self, item_values):
+        """Create edit window for time entry"""
+        edit_window = tk.Toplevel(self.root)
+        edit_window.title("Edit Time Entry")
+        edit_window.resizable(False, False)
+
+        # Center the window
+        window_width = 400
+        window_height = 300
+        screen_width = edit_window.winfo_screenwidth()
+        screen_height = edit_window.winfo_screenheight()
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        edit_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+        # Create form fields
+        ttk.Label(edit_window, text="Date:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        date_var = tk.StringVar(value=item_values[0])
+        date_entry = ttk.Entry(edit_window, textvariable=date_var, state='readonly')
+        date_entry.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+
+        ttk.Label(edit_window, text="Hours Worked:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        hours_var = tk.DoubleVar(value=float(item_values[1]))
+        ttk.Entry(edit_window, textvariable=hours_var).grid(row=1, column=1, padx=5, pady=5, sticky='w')
+
+        ttk.Label(edit_window, text="Overtime:").grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        overtime_var = tk.DoubleVar(value=float(item_values[2]))
+        ttk.Entry(edit_window, textvariable=overtime_var).grid(row=2, column=1, padx=5, pady=5, sticky='w')
+
+        ttk.Label(edit_window, text="Type:").grid(row=3, column=0, padx=5, pady=5, sticky='e')
+        type_var = tk.StringVar(value=item_values[3].lower())
+        type_combo = ttk.Combobox(edit_window, textvariable=type_var, 
+                                 values=["work", "holiday", "sick", "vacation"], 
+                                 state="readonly")
+        type_combo.grid(row=3, column=1, padx=5, pady=5, sticky='w')
+
+        ttk.Label(edit_window, text="Notes:").grid(row=4, column=0, padx=5, pady=5, sticky='ne')
+        notes_entry = tk.Text(edit_window, width=30, height=5)
+        notes_entry.insert('1.0', item_values[4])
+        notes_entry.grid(row=4, column=1, padx=5, pady=5, sticky='w')
+
+        def save_changes():
+            try:
+                new_hours = hours_var.get()
+                new_overtime = overtime_var.get()
+                new_type = type_var.get()
+                new_notes = notes_entry.get("1.0", tk.END).strip()
+
+                if new_hours < 0:
+                    raise ValueError("Hours worked cannot be negative")
+                if new_overtime < 0:
+                    raise ValueError("Overtime hours cannot be negative")
+
+                conn = self.db_manager.get_connection()
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    UPDATE time_records SET
+                        hours_worked = ?,
+                        overtime_hours = ?,
+                        record_type = ?,
+                        notes = ?
+                    WHERE employee_id = ? AND date = ?
+                ''', (
+                    new_hours,
+                    new_overtime,
+                    new_type,
+                    new_notes,
+                    self.selected_employee,
+                    item_values[0]
+                ))
+
+                conn.commit()
+                messagebox.showinfo("Success", "Time entry updated successfully")
+                edit_window.destroy()
+                self.load_time_records()
+
+            except ValueError as ve:
+                messagebox.showerror("Validation Error", str(ve))
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update record: {str(e)}")
+            finally:
+                if 'conn' in locals():
+                    conn.close()
+
+        ttk.Button(edit_window, text="Save Changes", command=save_changes).grid(
+            row=5, column=1, padx=5, pady=10, sticky='e')
+
+        edit_window.grab_set()
+        edit_window.wait_window()
+    
+    def create_employee_selection_frame(self, parent):
+        """Create employee selection and period display frame"""
+        select_frame = ttk.LabelFrame(parent, text="Employee & Period Selection")
+        select_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Employee selection row
+        emp_row = ttk.Frame(select_frame)
+        emp_row.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(emp_row, text="Employee:").pack(side=tk.LEFT)
+        self.emp_combo = ttk.Combobox(emp_row, textvariable=self.emp_var, width=40, state="readonly")
+        self.emp_combo.pack(side=tk.LEFT, padx=(5, 20))
+        self.emp_combo.bind('<<ComboboxSelected>>', self.on_employee_select)
+
+        # Period display
+        self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
+        ttk.Label(emp_row, textvariable=self.period_display_var, style='Info.TLabel').pack(side=tk.LEFT, padx=(5, 20))
+        
+        ttk.Button(emp_row, text="Load Month Data", command=self.load_month_data).pack(side=tk.LEFT, padx=5)
+        ttk.Button(emp_row, text="Current Month", command=self.go_to_current_month).pack(side=tk.LEFT, padx=5)
+    
+    def create_time_entry_frame(self, parent):
+        """Create time entry section with improved date handling"""
+        entry_frame = ttk.LabelFrame(parent, text="Add/Edit Time Entry")
+        entry_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Date selection row
+        date_row = ttk.Frame(entry_frame)
+        date_row.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(date_row, text="Date:").pack(side=tk.LEFT)
+        
+        # Date spinboxes with better validation
+        self.day_spin = tk.Spinbox(date_row, from_=1, to=31, textvariable=self.day_var, width=4)
+        self.day_spin.pack(side=tk.LEFT, padx=2)
+        ttk.Label(date_row, text="/").pack(side=tk.LEFT)
+
+        self.month_spin = tk.Spinbox(date_row, from_=1, to=12, textvariable=self.month_var, width=4)
+        self.month_spin.pack(side=tk.LEFT, padx=2)
+        ttk.Label(date_row, text="/").pack(side=tk.LEFT)
+
+        self.year_spin = tk.Spinbox(date_row, from_=2020, to=2030, textvariable=self.year_var, width=6)
+        self.year_spin.pack(side=tk.LEFT, padx=2)
+
+        # Calendar and today buttons
+        ttk.Button(date_row, text="📅", width=3, command=self.open_calendar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(date_row, text="Today", command=self.set_to_today).pack(side=tk.LEFT, padx=5)
+
+        # Display selected date
+        ttk.Label(date_row, textvariable=self.date_display_var, style='Info.TLabel').pack(side=tk.LEFT, padx=10)
+
+        # Time entry row
+        entry_row = ttk.Frame(entry_frame)
+        entry_row.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(entry_row, text="Hours:").pack(side=tk.LEFT)
+        ttk.Entry(entry_row, textvariable=self.hours_var, width=8).pack(side=tk.LEFT, padx=5)
+
+        ttk.Label(entry_row, text="Type:").pack(side=tk.LEFT, padx=(20, 0))
+        type_combo = ttk.Combobox(entry_row, textvariable=self.type_var, 
+                                 values=["work", "vacation", "sick", "holiday"], width=10, state="readonly")
+        type_combo.pack(side=tk.LEFT, padx=5)
+
+        ttk.Label(entry_row, text="Notes:").pack(side=tk.LEFT, padx=(20, 0))
+        ttk.Entry(entry_row, textvariable=self.notes_var, width=40).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(entry_row, text="Add Entry", command=self.add_time_entry).pack(side=tk.RIGHT, padx=5)
+    
+    def create_time_records_frame(self, parent):
+        """Create time records display frame"""
+        records_frame = ttk.LabelFrame(parent, text="Time Records")
+        records_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Time records treeview
+        time_columns = ('Date', 'Hours', 'Overtime', 'Type', 'Notes')
+        self.time_tree = ttk.Treeview(records_frame, columns=time_columns, show='headings', height=10)
+
+        time_widths = {'Date': 100, 'Hours': 80, 'Overtime': 80, 'Type': 100, 'Notes': 200}
+        for col in time_columns:
+            self.time_tree.heading(col, text=col)
+            self.time_tree.column(col, width=time_widths.get(col, 100))
+
+        time_scrollbar = ttk.Scrollbar(records_frame, orient=tk.VERTICAL, command=self.time_tree.yview)
+        self.time_tree.configure(yscrollcommand=time_scrollbar.set)
+
+        self.time_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        time_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=10)
+
+        # Time records buttons
+        time_btn_frame = ttk.Frame(records_frame)
+        time_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        ttk.Button(time_btn_frame, text="Edit Selected", command=self.edit_time_entry).pack(side=tk.LEFT, padx=5)
+        ttk.Button(time_btn_frame, text="Delete Selected", command=self.delete_time_entry).pack(side=tk.LEFT, padx=5)
+        ttk.Button(time_btn_frame, text="Sort/Clean Duplicates", command=self.sort_out_time_entries).pack(side=tk.LEFT, padx=5)
+    
+  # =============================================================================
+  # HELPER METHODS
+  # =============================================================================
 
     def update_date_display(self):
         """Update the displayed date and store it in self.date_var (YYYY-MM-DD)"""
@@ -563,24 +1072,17 @@ class EmployeeTimeApp:
             print(f"Error in _get_selected_employee_db_id: {str(e)}")
             return None
 
-    def load_time_records(self, employee_id=None, month=None, year=None):
-        """Load time records for the selected employee and period into the Treeview"""
-        # Clear existing records
+    def load_time_records(self):
+        """Load time records for the selected employee and current view period"""
         self.time_tree.delete(*self.time_tree.get_children())
 
-        # Use current selection if no parameters provided
-        employee_id = employee_id or self.selected_employee
-        month = month or self.month_var.get()
-        year = year or self.year_var.get()
-
-        if not employee_id:
+        if not self.selected_employee:
             return
 
         try:
             conn = self.db_manager.get_connection()
             cursor = conn.cursor()
 
-            # Get records for the selected month/year
             cursor.execute('''
                 SELECT date, hours_worked, overtime_hours, record_type, notes 
                 FROM time_records 
@@ -588,39 +1090,39 @@ class EmployeeTimeApp:
                 AND strftime('%m', date) = ? 
                 AND strftime('%Y', date) = ?
                 ORDER BY date
-            ''', (employee_id, f"{month:02d}", str(year)))
+            ''', (
+                self.selected_employee, 
+                f"{self.date_manager.view_month:02d}", 
+                str(self.date_manager.view_year)
+            ))
 
             records = cursor.fetchall()
 
-            # Insert records into the Treeview
             for record in records:
                 self.time_tree.insert('', 'end', values=(
-                    record[0],  # Date
-                    f"{record[1]:.2f}",  # Hours worked
-                    f"{record[2]:.2f}" if record[2] else "0.00",  # Overtime
-                    record[3].capitalize(),  # Type
-                    record[4]  # Notes
+                    record[0],
+                    f"{record[1]:.2f}",
+                    f"{record[2]:.2f}" if record[2] else "0.00",
+                    record[3].capitalize(),
+                    record[4] or ""
                 ))
 
         except Exception as e:
             messagebox.showerror("Database Error", f"Could not load time records: {str(e)}")
         finally:
-            conn.close()
+            if 'conn' in locals():
+                conn.close()
 
     def sort_out_time_entries(self):
-        """Check all entries for current employee/month and consolidate duplicates"""
+        """Clean up duplicate time entries for current employee/period"""
         if not self.selected_employee:
-            messagebox.showwarning("Warning", "Please select an employee first")
             return
 
         try:
             conn = self.db_manager.get_connection()
             cursor = conn.cursor()
 
-            month = self.month_var.get()
-            year = self.year_var.get()
-
-            # Find duplicate dates for selected employee/month
+            # Find duplicates in current view period
             cursor.execute('''
                 SELECT date, COUNT(*) as count
                 FROM time_records
@@ -630,20 +1132,20 @@ class EmployeeTimeApp:
                 GROUP BY date
                 HAVING count > 1
             ''', (
-                self.selected_employee,
-                f"{month:02d}",  # Ensure 2-digit month
-                str(year)
+                self.selected_employee, 
+                f"{self.date_manager.view_month:02d}", 
+                str(self.date_manager.view_year)
             ))
 
             duplicate_dates = cursor.fetchall()
 
             if not duplicate_dates:
-                return  # Silent return - no duplicates found
+                return
 
             processed_count = 0
 
             for dup_date, dup_count in duplicate_dates:
-                # Get all entries for this duplicate date sorted by priority
+                # Get all entries for this date
                 cursor.execute('''
                     SELECT id, hours_worked, overtime_hours, record_type, notes
                     FROM time_records
@@ -658,14 +1160,16 @@ class EmployeeTimeApp:
                 ''', (self.selected_employee, dup_date))
 
                 entries = cursor.fetchall()
-                keep_type = entries[0][3]  # Highest priority type
-
-                # Combine only same-type entries
+                if not entries:
+                    continue
+                
+                # Consolidate entries of the same type
+                keep_type = entries[0][3]
                 total_hours = sum(e[1] for e in entries if e[3] == keep_type)
                 total_overtime = sum(e[2] for e in entries if e[3] == keep_type)
                 combined_notes = " | ".join(e[4] for e in entries if e[4] and e[3] == keep_type)
 
-                # Delete old entries
+                # Delete all entries for this date
                 cursor.execute('''
                     DELETE FROM time_records
                     WHERE employee_id = ? AND date = ?
@@ -688,12 +1192,9 @@ class EmployeeTimeApp:
                 processed_count += 1
 
             conn.commit()
-
+            
             if processed_count > 0:
-                messagebox.showinfo(
-                    "Duplicates Consolidated",
-                    f"Processed {processed_count} dates with multiple entries"
-                )
+                messagebox.showinfo("Cleanup Complete", f"Processed {processed_count} duplicate entries")
                 self.load_time_records()
 
         except Exception as e:
@@ -1013,74 +1514,90 @@ class EmployeeTimeApp:
         self.selected_employee_id = None
 
     def load_month_data(self):
-        """Load time data for selected month"""
+        """Load time data for the current view period"""
         if not self.selected_employee:
             messagebox.showwarning("Warning", "Please select an employee first.")
             return
         
-        month = self.month_var.get()
-        year = self.year_var.get()
-        
-        # Load and display month data
-        records = self.time_tracker.get_monthly_records(self.selected_employee, year, month)
-        summary = self.time_tracker.calculate_monthly_summary(self.selected_employee, year, month)
-        self.load_time_records()
+        try:
+            records = self.time_tracker.get_monthly_records(
+                self.selected_employee, 
+                self.date_manager.view_year, 
+                self.date_manager.view_month
+            )
+            summary = self.time_tracker.calculate_monthly_summary(
+                self.selected_employee, 
+                self.date_manager.view_year, 
+                self.date_manager.view_month
+            )
+            
+            self.load_time_records()
 
-        # Display summary (implement display logic)
-        messagebox.showinfo("Month Summary", 
-                          f"Work Hours: {summary['total_work_hours']:.1f} / {summary['hours_per_week']:.1f} per week\n"
-                          f"Overtime: {summary['total_overtime']:.1f}\n"
-                          f"Vacation Days: {summary['vacation_days']} (Remaining: {summary['vacation_days_remaining']})\n"
-                          f"Sick Days: {summary['sick_days']} (Remaining: {summary['sick_days_remaining']})")
-    
+            messagebox.showinfo("Month Summary", 
+                              f"Work Hours: {summary['total_work_hours']:.1f}\n"
+                              f"Overtime: {summary['total_overtime']:.1f}\n"
+                              f"Vacation Days: {summary['vacation_days']}\n"
+                              f"Sick Days: {summary['sick_days']}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not load month data: {str(e)}")
+
     def add_time_entry(self):
         """Add time entry for selected employee"""
         if not self.selected_employee:
             messagebox.showwarning("Warning", "Please select an employee first.")
             return
+        
         try:
-            entry_date = datetime.strptime(self.date_var.get(), "%Y-%m-%d").date()
+            entry_date = self.date_manager.selected_date
             hours = self.hours_var.get()
             record_type = self.type_var.get()
             notes = self.notes_var.get()
+            
+            if hours < 0:
+                messagebox.showerror("Error", "Hours cannot be negative")
+                return
+            
             success, message = self.time_tracker.add_time_record(
                 self.selected_employee, entry_date, hours, record_type, notes
             )
+            
             if success:
                 messagebox.showinfo("Success", message)
-                self.load_time_records() 
+                # Update view period if entry is in different month
+                if (entry_date.month != self.date_manager.view_month or 
+                    entry_date.year != self.date_manager.view_year):
+                    self.date_manager.set_view_period(entry_date.month, entry_date.year)
+                    self.update_period_display()
+                
+                self.load_time_records()
+                
+                # Clear entry fields
                 self.hours_var.set(0.0)
                 self.notes_var.set("")
+                
+                # Clean up duplicates
                 self.sort_out_time_entries()
-
             else:
                 messagebox.showerror("Error", message)
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid date (YYYY-MM-DD)")
-        except AttributeError:
-            messagebox.showerror("Error", "Could not find date attribute. Please check the date field.")
-
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not add time entry: {str(e)}")
+    
     def delete_time_entry(self):
-        """Delete selected time entry from database (single record only)"""
+        """Delete selected time entry from database"""
         selected_items = self.time_tree.selection()
 
         if not selected_items:
             messagebox.showwarning("Warning", "Please select a time entry to delete")
             return
 
-        # Only process the first selected item to ensure single deletion
-        first_selected = selected_items[0]
-
         try:
-            # Get record details from Treeview
-            item_values = self.time_tree.item(first_selected)['values']
+            item_values = self.time_tree.item(selected_items[0])['values']
             if not item_values or len(item_values) < 1:
                 raise ValueError("Invalid record selected")
 
-            record_date = item_values[0]  # First column is date
-            employee_id = self.selected_employee
+            record_date = item_values[0]
 
-            # Confirm deletion
             confirm = messagebox.askyesno(
                 "Confirm Deletion",
                 f"Delete time entry for {record_date}?\nThis action cannot be undone."
@@ -1088,52 +1605,47 @@ class EmployeeTimeApp:
             if not confirm:
                 return
 
-            # Delete from database with precise matching
             conn = self.db_manager.get_connection()
             cursor = conn.cursor()
 
-            # First verify we have exactly one matching record
-            cursor.execute('''
-                SELECT COUNT(*) FROM time_records 
-                WHERE employee_id = ? AND date = ?
-            ''', (employee_id, record_date))
-
-            count = cursor.fetchone()[0]
-
-            if count == 0:
-                raise ValueError("No matching record found in database")
-            elif count > 1:
-                # Handle case where duplicates exist
-                messagebox.showwarning("Warning", 
-                                     f"Found {count} entries for this date. Deleting all matching entries.")
-
-            # Proceed with deletion
             cursor.execute('''
                 DELETE FROM time_records 
                 WHERE employee_id = ? AND date = ?
-            ''', (employee_id, record_date))
+            ''', (self.selected_employee, record_date))
 
             deleted_rows = cursor.rowcount
             conn.commit()
 
-            if deleted_rows == 1:
-                messagebox.showinfo("Success", "Time entry deleted successfully")
+            if deleted_rows > 0:
+                messagebox.showinfo("Success", f"Deleted {deleted_rows} time entry(ies)")
+                self.load_time_records()
             else:
-                messagebox.showinfo("Info", f"Deleted {deleted_rows} time entries")
-
-            # Refresh the display
-            self.load_time_records()
+                messagebox.showwarning("Warning", "No records found to delete")
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to delete time entry: {str(e)}")
         finally:
             if 'conn' in locals():
                 conn.close()
-
+    
     def edit_time_entry(self):
-        sort_out_time_entries()
-        pass
+        """Edit selected time entry via pop-up window"""
+        selected_item = self.time_tree.selection()
 
+        if not selected_item:
+            messagebox.showwarning("Warning", "Please select a time entry to edit")
+            return
+
+        try:
+            item_values = self.time_tree.item(selected_item[0])['values']
+            if not item_values or len(item_values) < 5:
+                raise ValueError("Invalid record selected")
+
+            self.create_edit_window(item_values)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to edit time entry: {str(e)}")
+    
     def generate_employee_report(self):
         """Generate report for selected employee"""
         if not self.selected_employee:
@@ -1167,262 +1679,6 @@ class EmployeeTimeApp:
         """Generate summary report for all employees"""
         self.report_text.delete(1.0, tk.END)
         self.report_text.insert(1.0, "Summary report functionality to be implemented...")
-
-    def create_employee_details_tab(self):
-        """Create a tab to display detailed employee information"""
-        details_frame = ttk.Frame(self.notebook)
-        self.notebook.add(details_frame, text="Employee Details")
-
-        # Main container frame
-        container = ttk.Frame(details_frame)
-        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Employee selection
-        selection_frame = ttk.Frame(container)
-        selection_frame.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(selection_frame, text="Select Employee:").pack(side=tk.LEFT)
-        self.details_emp_var = tk.StringVar()
-        self.details_emp_combo = ttk.Combobox(
-            selection_frame, 
-            textvariable=self.details_emp_var, 
-            width=30,
-            state='readonly'
-        )
-        self.details_emp_combo.pack(side=tk.LEFT, padx=5)
-        self.details_emp_combo.bind('<<ComboboxSelected>>', self.load_employee_details)
-
-        # Refresh button
-        ttk.Button(
-            selection_frame, 
-            text="Refresh", 
-            command=self.update_details_combo
-        ).pack(side=tk.LEFT, padx=5)
-
-        # Details display notebook
-        details_notebook = ttk.Notebook(container)
-        details_notebook.pack(fill=tk.BOTH, expand=True)
-
-        # Personal Info Tab
-        personal_frame = ttk.Frame(details_notebook)
-        details_notebook.add(personal_frame, text="Personal Info")
-
-        # Create labels for personal info
-        self.personal_info_labels = {
-            'Name': ttk.Label(personal_frame, text="Name:"),
-            'Employee ID': ttk.Label(personal_frame, text="Employee ID:"),
-            'Position': ttk.Label(personal_frame, text="Position:"),
-            'Hourly Rate': ttk.Label(personal_frame, text="Hourly Rate:"),
-            'Email': ttk.Label(personal_frame, text="Email:"),
-            'Hire Date': ttk.Label(personal_frame, text="Hire Date:"),
-            'Status': ttk.Label(personal_frame, text="Status:")
-        }
-
-        # Corresponding value labels
-        self.personal_info_values = {
-            'Name': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Employee ID': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Position': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Hourly Rate': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Email': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Hire Date': ttk.Label(personal_frame, text="", foreground='blue'),
-            'Status': ttk.Label(personal_frame, text="", foreground='blue')
-        }
-
-        # Grid layout for personal info
-        for i, (key, label) in enumerate(self.personal_info_labels.items()):
-            label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
-            self.personal_info_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
-
-        # Work Details Tab
-        work_frame = ttk.Frame(details_notebook)
-        details_notebook.add(work_frame, text="Work Details")
-
-        # Work details labels
-        self.work_info_labels = {
-            'Hours/Week': ttk.Label(work_frame, text="Hours/Week:"),
-            'Vacation Days/Year': ttk.Label(work_frame, text="Vacation Days/Year:"),
-            'Sick Days/Year': ttk.Label(work_frame, text="Sick Days/Year:"),
-            'Vacation Days Remaining': ttk.Label(work_frame, text="Vacation Days Remaining:"),
-            'Sick Days Remaining': ttk.Label(work_frame, text="Sick Days Remaining:")
-        }
-
-        # Work details values
-        self.work_info_values = {
-            'Hours/Week': ttk.Label(work_frame, text="", foreground='blue'),
-            'Vacation Days/Year': ttk.Label(work_frame, text="", foreground='blue'),
-            'Sick Days/Year': ttk.Label(work_frame, text="", foreground='blue'),
-            'Vacation Days Remaining': ttk.Label(work_frame, text="", foreground='blue'),
-            'Sick Days Remaining': ttk.Label(work_frame, text="", foreground='blue')
-        }
-
-        # Grid layout for work info
-        for i, (key, label) in enumerate(self.work_info_labels.items()):
-            label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
-            self.work_info_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
-
-        # Stats Tab
-        stats_frame = ttk.Frame(details_notebook)
-        details_notebook.add(stats_frame, text="Statistics")
-
-        # Current month/year
-        current_month = datetime.now().month
-        current_year = datetime.now().year
-
-        # Stats labels
-        self.stats_labels = {
-            'Current Month': ttk.Label(stats_frame, text=f"{calendar.month_name[current_month]} {current_year}:"),
-            'Work Hours': ttk.Label(stats_frame, text="Work Hours:"),
-            'Overtime': ttk.Label(stats_frame, text="Overtime:"),
-            'Vacation Days': ttk.Label(stats_frame, text="Vacation Days:"),
-            'Sick Days': ttk.Label(stats_frame, text="Sick Days:"),
-            'YTD Work Hours': ttk.Label(stats_frame, text="YTD Work Hours:"),
-            'YTD Overtime': ttk.Label(stats_frame, text="YTD Overtime:")
-        }
-
-        # Stats values
-        self.stats_values = {
-            'Work Hours': ttk.Label(stats_frame, text="", foreground='blue'),
-            'Overtime': ttk.Label(stats_frame, text="", foreground='blue'),
-            'Vacation Days': ttk.Label(stats_frame, text="", foreground='blue'),
-            'Sick Days': ttk.Label(stats_frame, text="", foreground='blue'),
-            'YTD Work Hours': ttk.Label(stats_frame, text="", foreground='blue'),
-            'YTD Overtime': ttk.Label(stats_frame, text="", foreground='blue')
-        }
-
-        # Grid layout for stats
-        self.stats_labels['Current Month'].grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        for i, (key, label) in enumerate(self.stats_labels.items()):
-            if key != 'Current Month':
-                label.grid(row=i, column=0, sticky='w', padx=5, pady=5)
-                self.stats_values[key].grid(row=i, column=1, sticky='w', padx=5, pady=5)
-
-        # Initialize the combo box
-        self.update_details_combo()
-
-    def create_employee_details_window(self):
-        """Create a standalone window to display details of the selected employee"""
-        # Get selected employee
-        selection = self.emp_tree.selection()
-        if not selection:
-            messagebox.showwarning("Warning", "Please select an employee first.")
-            return
-
-        item = self.emp_tree.item(selection[0])
-        employee_id = item['values'][0] 
-
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM employees WHERE employee_id = ?", (employee_id,))
-        employee = cursor.fetchone()
-        conn.close()
-
-        if not employee:
-            messagebox.showerror("Error", "Selected employee not found in database")
-            return
-
-        details_window = tk.Toplevel(self.root)
-        details_window.title(f"Employee Details - {employee[1]} ({employee[2]})")
-        details_window.geometry("500x450")
-        details_window.transient(self.root)
-        details_window.grab_set()
-
-        details_window.protocol("WM_DELETE_WINDOW", details_window.destroy)
-
-        container = ttk.Frame(details_window)
-        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        header_frame = ttk.Frame(container)
-        header_frame.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(header_frame, 
-                 text=f"{employee[1]} ({employee[2]})", 
-                 font=('Arial', 12, 'bold')).pack(side=tk.LEFT)
-
-        ttk.Button(
-            header_frame,
-            text="Close",
-            command=details_window.destroy
-        ).pack(side=tk.RIGHT)
-
-        details_notebook = ttk.Notebook(container)
-        details_notebook.pack(fill=tk.BOTH, expand=True)
-
-        personal_frame = ttk.Frame(details_notebook)
-        details_notebook.add(personal_frame, text="Personal Info")
-
-        personal_info = [
-            ("Name:", employee[1]),
-            ("Employee ID:", employee[2]),
-            ("Position:", employee[3] if employee[3] else "N/A"),
-            ("Hourly Rate:", f"${employee[4]:.2f}" if employee[4] else "N/A"),
-            ("Email:", employee[5] if employee[5] else "N/A"),
-            ("Hire Date:", employee[6] if employee[6] else "N/A"),
-            ("Status:", "Active" if employee[10] else "Inactive")
-        ]
-
-        for row, (label, value) in enumerate(personal_info):
-            ttk.Label(personal_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
-            ttk.Label(personal_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
-
-        work_frame = ttk.Frame(details_notebook)
-        details_notebook.add(work_frame, text="Work Details")
-
-        current_year = datetime.now().year
-        start_of_year = date(current_year, 1, 1)
-
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT COUNT(*) FROM time_records 
-            WHERE employee_id = ? AND date >= ? AND record_type = 'vacation'
-        ''', (employee[0], start_of_year))
-        vacation_used = cursor.fetchone()[0]
-
-        cursor.execute('''
-            SELECT COUNT(*) FROM time_records 
-            WHERE employee_id = ? AND date >= ? AND record_type = 'sick'
-        ''', (employee[0], start_of_year))
-        sick_used = cursor.fetchone()[0]
-        conn.close()
-
-        vacation_remaining = max(0, (employee[8] if len(employee) > 8 else 20)) - vacation_used
-        sick_remaining = max(0, (employee[9] if len(employee) > 9 else 10) - sick_used)
-
-        work_info = [
-            ("Hours/Week:", f"{employee[7]:.1f}" if len(employee) > 7 else "40.0"),
-            ("Vacation Days/Year:", str(employee[8]) if len(employee) > 8 else "20"),
-            ("Sick Days/Year:", str(employee[9]) if len(employee) > 9 else "10"),
-            ("Vacation Days Remaining:", f"{vacation_remaining}"),
-            ("Sick Days Remaining:", f"{sick_remaining}")
-        ]
-
-        for row, (label, value) in enumerate(work_info):
-            ttk.Label(work_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
-            ttk.Label(work_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
-
-        stats_frame = ttk.Frame(details_notebook)
-        details_notebook.add(stats_frame, text="Statistics")
-
-        current_month = datetime.now().month
-        monthly_summary = self.time_tracker.calculate_monthly_summary(employee[0], current_year, current_month)
-        yearly_summary = self.time_tracker.calculate_yearly_summary(employee[0], current_year)
-
-        stats_info = [
-            (f"{calendar.month_name[current_month]} {current_year}:", ""),
-            ("Work Hours:", f"{monthly_summary['total_work_hours']:.1f}"),
-            ("Overtime:", f"{monthly_summary['total_overtime']:.1f}"),
-            ("Vacation Days:", str(monthly_summary['vacation_days'])),
-            ("Sick Days:", str(monthly_summary['sick_days'])),
-            ("YTD Work Hours:", f"{yearly_summary['total_work_hours']:.1f}"),
-            ("YTD Overtime:", f"{yearly_summary['total_overtime']:.1f}")
-        ]
-
-        for row, (label, value) in enumerate(stats_info):
-            ttk.Label(stats_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
-            if value:  # Skip empty value for header row
-                ttk.Label(stats_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
 
     def update_details_combo(self):
         """Update the employee combobox in details tab"""
