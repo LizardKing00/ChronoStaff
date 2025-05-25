@@ -42,6 +42,29 @@ class EmployeeTimeApp:
         self.configure_styles()
         self.create_widgets()
 
+    def setup_ui_variables(self):
+        """Initialize all UI variables"""
+        # Date component variables
+        day, month, year = self.date_manager.get_date_components()
+        self.day_var = tk.IntVar(value=day)
+        self.month_var = tk.IntVar(value=month)
+        self.year_var = tk.IntVar(value=year)
+        
+        # Display variables
+        self.date_display_var = tk.StringVar()
+        self.period_display_var = tk.StringVar()
+        
+        # Entry variables
+        self.emp_var = tk.StringVar()
+        self.hours_var = tk.DoubleVar()
+        self.type_var = tk.StringVar(value="work")
+        self.notes_var = tk.StringVar()
+        
+        # Bind variable changes to update methods
+        self.day_var.trace('w', self.on_date_component_change)
+        self.month_var.trace('w', self.on_date_component_change)
+        self.year_var.trace('w', self.on_date_component_change)
+
   # =============================================================================
   # WINDOWS, TABS ETC...
   # =============================================================================
