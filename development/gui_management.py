@@ -194,16 +194,6 @@ class EmployeeTimeApp:
         self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
         ttk.Label(emp_row, textvariable=self.period_display_var, style='Info.TLabel').pack(side=tk.LEFT, padx=(5, 20))
 
-        # ttk.Label(emp_row, text="Month:").pack(side=tk.LEFT)
-        # self.month_var = tk.IntVar(value=self.current_month)
-        # month_spin = tk.Spinbox(emp_row, from_=1, to=12, textvariable=self.month_var, width=5)
-        # month_spin.pack(side=tk.LEFT, padx=(5, 10))
-
-        # ttk.Label(emp_row, text="Year:").pack(side=tk.LEFT)
-        # self.year_var = tk.IntVar(value=self.current_year)
-        # year_spin = tk.Spinbox(emp_row, from_=2020, to=2030, textvariable=self.year_var, width=8)
-        # year_spin.pack(side=tk.LEFT, padx=(5, 20))
-
         ttk.Button(emp_row, text="Load Month Data", command=self.load_month_data).pack(side=tk.LEFT, padx=5)
 
         # Time entry section #TODO: MAKE THIS INTO FRAME
@@ -293,9 +283,10 @@ class EmployeeTimeApp:
         # Time records buttons
         time_btn_frame = ttk.Frame(records_frame)
         time_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-
-        ttk.Button(time_btn_frame, text="Edit Selected", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
-        ttk.Button(time_btn_frame, text="Delete Selected", command=self.delete_time_entry).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(time_btn_frame,width=18, text="Edit Selected", command=self.not_yet_implemented).pack(side=tk.TOP, padx=5, pady=5, anchor=tk.E)
+        ttk.Button(time_btn_frame,width=18, text="Delete Selected", command=self.delete_time_entry).pack(side=tk.TOP, padx=5, pady=5, anchor=tk.E)
+        ttk.Button(time_btn_frame,width=18, text="Sort/Clean Duplicates", command=self.sort_out_time_entries).pack(side=tk.TOP, padx=5, pady=5, anchor=tk.E)
 
         self.update_employee_combo()
 
@@ -1471,9 +1462,23 @@ class EmployeeTimeApp:
                 conn.close()
 
     def edit_time_entry(self):
-        sort_out_time_entries()
-        pass
+        """Edit selected time entry via pop-up window"""
+        selected_item = self.time_tree.selection()
 
+        if not selected_item:
+            messagebox.showwarning("Warning", "Please select a time entry to edit")
+            return
+
+        try:
+            item_values = self.time_tree.item(selected_item[0])['values']
+            if not item_values or len(item_values) < 5:
+                raise ValueError("Invalid record selected")
+
+            self.create_edit_window(item_values)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to edit time entry: {str(e)}")
+    
     def generate_employee_report(self):
         """Generate report for selected employee"""
         if not self.selected_employee:
