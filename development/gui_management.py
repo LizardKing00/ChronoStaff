@@ -495,7 +495,7 @@ class EmployeeTimeApp:
         ttk.Entry(output_path_frame, textvariable=self.output_path_var, width=60).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(output_path_frame, text="Browse", command=self.browse_output_path).pack(side=tk.RIGHT, padx=(5, 0))
 
-        # Default settings (your existing code)
+        # Default settings
         defaults_frame = ttk.LabelFrame(main_container, text="Default Settings")
         defaults_frame.pack(fill=tk.X, pady=(0, 20))
         
