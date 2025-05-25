@@ -23,14 +23,15 @@ class EmployeeTimeApp:
         self.root = root
         self.root.title("Chrono Staff")
         self.root.geometry("1200x800")
-        self.date_var = tk.StringVar()
+        self.date_manager = DateManager()
+        self.setup_ui_variables()
+        self.date_var = tk.StringVar() #TODO remove?
         self.date_display_var = tk.StringVar()        
 
         # Initialize database and managers
         self.db_manager = DatabaseManager()
         self.employee_manager = EmployeeManager(self.db_manager)
         self.time_tracker = TimeTracker(self.db_manager)
-        self.date_manager = DateManager()
 
         # Current selections
         self.selected_employee = None
@@ -1009,6 +1010,24 @@ class EmployeeTimeApp:
             self.update_period_display()
             if self.selected_employee:
                 self.load_time_records()
+
+    def on_date_component_change(self, *args):
+        """Handle changes to date component spinboxes"""
+        try:
+            day = self.day_var.get()
+            month = self.month_var.get()
+            year = self.year_var.get()
+            
+            success, error_msg = self.date_manager.set_date_components(day, month, year)
+            if success:
+                self.update_date_display()
+                self.update_view_period_if_needed()
+            else:
+                # Show error but don't crash
+                self.date_display_var.set(f"Invalid date: {error_msg}")
+        except tk.TclError:
+            # Handle spinbox in transition state
+            pass
 
   # =============================================================================
   #  TIME MANAGEMENT METHODS
