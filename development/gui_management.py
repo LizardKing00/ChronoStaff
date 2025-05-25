@@ -211,10 +211,10 @@ class EmployeeTimeApp:
         entry_frame.pack(fill=tk.X, pady=(0, 10))
 
         # First row - Date and basic info
-        date_row = ttk.Frame(entry_frame)
-        date_row.pack(fill=tk.X, padx=10, pady=5)
+        date_selection_row = ttk.Frame(entry_frame)
+        date_selection_row.pack(fill=tk.X, padx=10, pady=5)
 
-        ttk.Label(date_row, text="Date:").pack(side=tk.LEFT)
+        ttk.Label(date_selection_row, text="Date:").pack(side=tk.LEFT)
         self.date_display_var = tk.StringVar()
 
         # Date entry fields
@@ -226,39 +226,38 @@ class EmployeeTimeApp:
         self.date_var = tk.StringVar()
         self.update_date_display()
 
-        day_spin = tk.Spinbox(date_row, from_=1, to=31, textvariable=self.day_var, width=4)
+        day_spin = tk.Spinbox(date_selection_row, from_=1, to=31, textvariable=self.day_var, width=4)
         day_spin.pack(side=tk.LEFT, padx=2)
-        ttk.Label(date_row, text="/").pack(side=tk.LEFT)
+        ttk.Label(date_selection_row, text="/").pack(side=tk.LEFT)
 
-        month_spin = tk.Spinbox(date_row, from_=1, to=12, textvariable=self.date_month_var, width=4)
+        month_spin = tk.Spinbox(date_selection_row, from_=1, to=12, textvariable=self.date_month_var, width=4)
         month_spin.pack(side=tk.LEFT, padx=2)
-        ttk.Label(date_row, text="/").pack(side=tk.LEFT)
+        ttk.Label(date_selection_row, text="/").pack(side=tk.LEFT)
 
-        year_spin = tk.Spinbox(date_row, from_=2020, to=2030, textvariable=self.date_year_var, width=6)
+        year_spin = tk.Spinbox(date_selection_row, from_=2020, to=2030, textvariable=self.date_year_var, width=6)
         year_spin.pack(side=tk.LEFT, padx=2)
 
         # Calendar button #TODO: this icon is ugly, change this 
-        ttk.Button(date_row, text="📅", width=3, command=self.open_calendar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(date_selection_row, text="📅", width=3, command=self.open_calendar).pack(side=tk.LEFT, padx=5)
+        # Set to today #TODO: this icon is ugly, change this 
+        ttk.Button(date_selection_row, text="Today", width=20, command=self.set_to_today).pack(side=tk.LEFT, padx=5)
 
-        # Display selected date
-        self.date_display_var = tk.StringVar()
-        self.update_date_display()
-        ttk.Label(date_row, textvariable=self.date_display_var, foreground='blue').pack(side=tk.LEFT, padx=10)
-
-        # Hours and type
-        ttk.Label(date_row, text="Hours:").pack(side=tk.LEFT, padx=(20, 0))
-        self.hours_var = tk.DoubleVar()
-        ttk.Entry(date_row, textvariable=self.hours_var, width=8).pack(side=tk.LEFT, padx=5)
-
-        ttk.Label(date_row, text="Type:").pack(side=tk.LEFT, padx=(10, 0))
-        self.type_var = tk.StringVar(value="work")
-        type_combo = ttk.Combobox(date_row, textvariable=self.type_var, 
-                                 values=["work", "vacation", "sick", "holiday"], width=10, state="readonly")
-        type_combo.pack(side=tk.LEFT, padx=5)
 
         # Second row - Notes and buttons
         notes_row = ttk.Frame(entry_frame)
-        notes_row.pack(fill=tk.X, padx=10, pady=5)
+        notes_row.pack(fill=tk.X, padx=2, pady=5)
+
+        # Hours and type
+        ttk.Label(notes_row, text="Hours:").pack(side=tk.LEFT, padx=(10, 0))
+        self.hours_var = tk.DoubleVar()
+        ttk.Entry(notes_row, textvariable=self.hours_var, width=8).pack(side=tk.LEFT, padx=5)
+
+        ttk.Label(notes_row, text="Type:").pack(side=tk.LEFT, padx=(10, 0))
+        self.type_var = tk.StringVar(value="work")
+        type_combo = ttk.Combobox(notes_row, textvariable=self.type_var, 
+                                 values=["work", "vacation", "sick", "holiday"], width=10, state="readonly")
+        type_combo.pack(side=tk.LEFT, padx=5)
+
 
         ttk.Label(notes_row, text="Notes:").pack(side=tk.LEFT)
         self.notes_var = tk.StringVar()
