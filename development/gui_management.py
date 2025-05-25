@@ -226,21 +226,22 @@ class EmployeeTimeApp:
         self.date_var = tk.StringVar()
         self.update_date_display()
 
-        day_spin = tk.Spinbox(date_selection_row, from_=1, to=31, textvariable=self.day_var, width=4)
-        day_spin.pack(side=tk.LEFT, padx=2)
+        # Date spinboxes with better validation
+        self.day_spin = tk.Spinbox(date_selection_row, from_=1, to=31, textvariable=self.day_var, width=4, )
+        self.day_spin.pack(side=tk.LEFT, padx=(15,2))
         ttk.Label(date_selection_row, text="/").pack(side=tk.LEFT)
 
-        month_spin = tk.Spinbox(date_selection_row, from_=1, to=12, textvariable=self.date_month_var, width=4)
-        month_spin.pack(side=tk.LEFT, padx=2)
+        self.month_spin = tk.Spinbox(date_selection_row, from_=1, to=12, textvariable=self.month_var, width=4)
+        self.month_spin.pack(side=tk.LEFT, padx=2)
         ttk.Label(date_selection_row, text="/").pack(side=tk.LEFT)
 
-        year_spin = tk.Spinbox(date_selection_row, from_=2020, to=2030, textvariable=self.date_year_var, width=6)
-        year_spin.pack(side=tk.LEFT, padx=2)
+        self.year_spin = tk.Spinbox(date_selection_row, from_=2020, to=2030, textvariable=self.year_var, width=6)
+        self.year_spin.pack(side=tk.LEFT, padx=2)
 
-        # Calendar button #TODO: this icon is ugly, change this 
-        ttk.Button(date_selection_row, text="📅", width=3, command=self.open_calendar).pack(side=tk.LEFT, padx=5)
+        # Calendar and today buttons
+        ttk.Button(date_selection_row, text="Launch Calendar", width=15, command=self.open_calendar).pack(side=tk.LEFT, padx=(105,5))
         # Set to today #TODO: this icon is ugly, change this 
-        ttk.Button(date_selection_row, text="Today", width=20, command=self.set_to_today).pack(side=tk.LEFT, padx=5)
+        ttk.Button(date_selection_row, text="Today", width=10, command=self.set_to_today).pack(side=tk.LEFT, padx=5)
 
 
         # Second row - Notes and buttons
@@ -259,14 +260,14 @@ class EmployeeTimeApp:
         type_combo.pack(side=tk.LEFT, padx=5)
 
 
-        ttk.Label(notes_row, text="Notes:").pack(side=tk.LEFT)
+        ttk.Label(notes_row, text="Notes:").pack(side=tk.LEFT, padx=(10,10))
         self.notes_var = tk.StringVar()
         ttk.Entry(notes_row, textvariable=self.notes_var, width=50).pack(side=tk.LEFT, padx=(5, 20))
 
         ttk.Button(notes_row, text="Add Entry", command=self.add_time_entry).pack(side=tk.RIGHT, padx=5)
 
         # Bind events to update date display
-        for widget in [day_spin, month_spin, year_spin]:
+        for widget in [self.day_spin, self.month_spin, self.year_spin]:
             widget.bind('<FocusOut>', lambda e: self.update_date_display())
             widget.bind('<KeyRelease>', lambda e: self.root.after(100, self.update_date_display))
 
@@ -1027,6 +1028,19 @@ class EmployeeTimeApp:
         except tk.TclError:
             # Handle spinbox in transition state
             pass
+
+    def set_to_today(self):
+        """Set the selected date to today"""
+        self.date_manager.reset_to_today()
+        day, month, year = self.date_manager.get_date_components()
+        
+        # Update UI variables without triggering events
+        self.day_var.set(day)
+        self.month_var.set(month)
+        self.year_var.set(year)
+        
+        self.update_date_display()
+        self.update_view_period_if_needed()
 
   # =============================================================================
   #  TIME MANAGEMENT METHODS
