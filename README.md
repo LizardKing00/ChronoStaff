@@ -58,7 +58,7 @@
   * `Color` (styled)
   * `Black & White` (minimal)
 
-Templates are intended to be fully customizable by modifying the underlying LaTeX files.
+Templates are intended to be fully customizable by modifying the underlying LaTeX files @ `./resources/templates`
 
 ---
 
