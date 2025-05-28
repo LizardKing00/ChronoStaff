@@ -6,6 +6,9 @@
 
 ## 🧩 Features Overview
 
+🎥 GUI Demonstration
+<table> <tr> <td><strong>🏢 Employee Management</strong></td> <td><strong>📅 Time Tracking</strong></td> </tr> <tr> <td><img src="resources/demo_employees.gif" alt="Employee Management GIF" width="400"/></td> <td><img src="resources/demo_tracking.gif" alt="Time Tracking GIF" width="400"/></td> </tr> <tr> <td><strong>📊 Reports Generation</strong></td> <td><strong>⚙️ Settings Configuration</strong></td> </tr> <tr> <td><img src="resources/demo_reports.gif" alt="Reports Tab GIF" width="400"/></td> <td><img src="resources/demo_settings.gif" alt="Settings GIF" width="400"/></td> </tr> </table>
+
 ### 🔧 Employee Management
 
 * **Employee CRUD Interface**: Add, edit, deactivate/reactivate, and permanently delete employees.
