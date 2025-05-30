@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkinter import font
 import sqlite3
+from typing import Dict, Any, Optional
 from datetime import datetime, date, timedelta
 import calendar
 import json
@@ -639,3 +640,336 @@ class TimeTracker:
         
         conn.close()
         return False, "No valid fields to update"
+
+# =============================================================================
+# EMPLOYEE MANAGEMENT CLASS
+# =============================================================================
+
+class SettingsManager:
+    """
+    Manages all application settings including general settings, company data, and report settings.
+    Provides a clean interface between the GUI and database.
+    """
+    
+    def __init__(self, db_manager):
+        """
+        Initialize SettingsManager with a database manager instance.
+        
+        Args:
+            db_manager: DatabaseManager instance
+        """
+        self.db_manager = db_manager
+    
+    def get_general_settings(self) -> Dict[str, Any]:
+        """
+        Retrieve all general settings from the settings table.
+        
+        Returns:
+            Dict with setting keys and their values (converted to appropriate types)
+        """
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("SELECT key, value FROM settings")
+            rows = cursor.fetchall()
+            
+            settings = {}
+            for key, value in rows:
+                # Convert values to appropriate types
+                if key in ['standard_hours_per_day', 'overtime_threshold']:
+                    settings[key] = float(value)
+                elif key in ['vacation_days_per_year', 'sick_days_per_year', 'business_days_per_week']:
+                    settings[key] = int(value)
+                else:
+                    settings[key] = value
+                    
+            return settings
+            
+        except sqlite3.Error as e:
+            print(f"Error retrieving general settings: {e}")
+            return {}
+        finally:
+            conn.close()
+    
+    def save_general_settings(self, settings: Dict[str, Any]) -> bool:
+        """
+        Save general settings to the settings table.
+        
+        Args:
+            settings: Dictionary of setting key-value pairs
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            for key, value in settings.items():
+                cursor.execute('''
+                    INSERT OR REPLACE INTO settings (key, value, updated_at) 
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                ''', (key, str(value)))
+            
+            conn.commit()
+            return True
+            
+        except sqlite3.Error as e:
+            print(f"Error saving general settings: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
+    def get_company_data(self) -> Dict[str, Any]:
+        """
+        Retrieve company data from the database.
+        
+        Returns:
+            Dict with company information, or empty dict if none found
+        """
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT companyname, companystreet, companycity, companyphone, companyemail,
+                       company_color_1, company_color_2, company_color_3
+                FROM company_data 
+                WHERE id = 1
+            ''')
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'companyname': row[0] or '',
+                    'companystreet': row[1] or '',
+                    'companycity': row[2] or '',
+                    'companyphone': row[3] or '',
+                    'companyemail': row[4] or '',
+                    'company_color_1': row[5] or '#1E40AF',
+                    'company_color_2': row[6] or '#3B82F6',
+                    'company_color_3': row[7] or '#93C5FD'
+                }
+            else:
+                return {}
+                
+        except sqlite3.Error as e:
+            print(f"Error retrieving company data: {e}")
+            return {}
+        finally:
+            conn.close()
+    
+    def save_company_data(self, company_data: Dict[str, str]) -> bool:
+        """
+        Save company data to the database.
+        
+        Args:
+            company_data: Dictionary with company information
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT OR REPLACE INTO company_data (
+                    id, companyname, companystreet, companycity, companyphone, companyemail,
+                    company_color_1, company_color_2, company_color_3, updated_at
+                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (
+                company_data.get('companyname', ''),
+                company_data.get('companystreet', ''),
+                company_data.get('companycity', ''),
+                company_data.get('companyphone', ''),
+                company_data.get('companyemail', ''),
+                company_data.get('company_color_1', '#1E40AF'),
+                company_data.get('company_color_2', '#3B82F6'),
+                company_data.get('company_color_3', '#93C5FD')
+            ))
+            
+            conn.commit()
+            return True
+            
+        except sqlite3.Error as e:
+            print(f"Error saving company data: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
+    def get_report_settings(self) -> Dict[str, Any]:
+        """
+        Retrieve report settings from the database.
+        
+        Returns:
+            Dict with report settings, or defaults if none found
+        """
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT lang, template, default_output_path
+                FROM report_settings 
+                WHERE id = 1
+            ''')
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'lang': row[0] or 'en',
+                    'template': row[1] or 'color',
+                    'default_output_path': row[2] or './reports/'
+                }
+            else:
+                return {
+                    'lang': 'en',
+                    'template': 'color',
+                    'default_output_path': './reports/'
+                }
+                
+        except sqlite3.Error as e:
+            print(f"Error retrieving report settings: {e}")
+            return {
+                'lang': 'en',
+                'template': 'color',
+                'default_output_path': './reports/'
+            }
+        finally:
+            conn.close()
+    
+    def save_report_settings(self, report_settings: Dict[str, str]) -> bool:
+        """
+        Save report settings to the database.
+        
+        Args:
+            report_settings: Dictionary with report settings
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT OR REPLACE INTO report_settings (
+                    id, lang, template, default_output_path, updated_at
+                ) VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (
+                report_settings.get('lang', 'en'),
+                report_settings.get('template', 'color'),
+                report_settings.get('default_output_path', './reports/')
+            ))
+            
+            conn.commit()
+            return True
+            
+        except sqlite3.Error as e:
+            print(f"Error saving report settings: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
+    def load_all_settings(self) -> Dict[str, Any]:
+        """
+        Load all settings from the database at once.
+        
+        Returns:
+            Dict containing all settings organized by category
+        """
+        return {
+            'general': self.get_general_settings(),
+            'company': self.get_company_data(),
+            'report': self.get_report_settings()
+        }
+    
+    def save_all_settings(self, general_settings: Dict[str, Any], 
+                         company_data: Dict[str, str], 
+                         report_settings: Dict[str, str]) -> bool:
+        """
+        Save all settings to the database in a single transaction.
+        
+        Args:
+            general_settings: General application settings
+            company_data: Company information
+            report_settings: Report generation settings
+            
+        Returns:
+            True if all saves successful, False otherwise
+        """
+        success = True
+        success &= self.save_general_settings(general_settings)
+        success &= self.save_company_data(company_data)
+        success &= self.save_report_settings(report_settings)
+        
+        return success
+    
+    def reset_to_defaults(self) -> bool:
+        """
+        Reset all settings to their default values.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        # Default general settings
+        default_general = {
+            'standard_hours_per_day': 8.0,
+            'overtime_threshold': 200.0,
+            'vacation_days_per_year': 30,
+            'sick_days_per_year': 10,
+            'business_days_per_week': 5
+        }
+        
+        # Default company data
+        default_company = {
+            'companyname': 'Meine Firma GmbH',
+            'companystreet': 'Geschäftsstraße 123',
+            'companycity': '10115 Berlin',
+            'companyphone': '+49-30-1234567',
+            'companyemail': 'contact@meinefirma.com',
+            'company_color_1': '#1E40AF',
+            'company_color_2': '#3B82F6',
+            'company_color_3': '#93C5FD'
+        }
+        
+        # Default report settings
+        default_report = {
+            'lang': 'en',
+            'template': 'color',
+            'default_output_path': './reports/'
+        }
+        
+        return self.save_all_settings(default_general, default_company, default_report)
+    
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """
+        Get a single setting value by key.
+        
+        Args:
+            key: Setting key to retrieve
+            default: Default value if setting not found
+            
+        Returns:
+            Setting value or default
+        """
+        settings = self.get_general_settings()
+        return settings.get(key, default)
+    
+    def set_setting(self, key: str, value: Any) -> bool:
+        """
+        Set a single setting value.
+        
+        Args:
+            key: Setting key
+            value: Setting value
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.save_general_settings({key: value})

@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 import calendar
 import json
 from calendar_popup import CalendarDialog
-from database_management import DatabaseManager, EmployeeManager, TimeTracker
+from database_management import DatabaseManager, EmployeeManager, TimeTracker, SettingsManager
 from date_management import DateManager
 import os
 import base64
@@ -32,6 +32,7 @@ class EmployeeTimeApp:
         self.db_manager = DatabaseManager()
         self.employee_manager = EmployeeManager(self.db_manager)
         self.time_tracker = TimeTracker(self.db_manager)
+        self.settings_manager = SettingsManager(self.db_manager)
 
         # Current selections
         self.selected_employee = None
@@ -612,6 +613,7 @@ class EmployeeTimeApp:
         ttk.Button(settings_btn_frame, text="Save Settings", command=self.save_settings).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Button(settings_btn_frame, text="Reset to Defaults", command=self.reset_settings).pack(side=tk.LEFT)
         ttk.Button(settings_btn_frame, text="Load Settings", command=self.load_settings).pack(side=tk.LEFT, padx=(10, 0))
+        self.load_settings()
 
     def pick_color(self, color_var, preview_label):
         """Open color picker dialog"""
@@ -626,23 +628,119 @@ class EmployeeTimeApp:
             print(f"Color picker error: {e}")
 
     def save_settings(self):
-        """Save all settings to database"""
-        # TODO: Implement database save functionality
-        print("Saving settings...")
-        # This will save both regular settings and company data
-        self.not_yet_implemented()
+        """Save all settings to database using SettingsManager"""
+        try:
+            # Collect general settings from GUI
+            general_settings = {
+                'standard_hours_per_day': self.std_hours_var.get(),
+                'overtime_threshold': self.overtime_threshold_var.get(),
+                'vacation_days_per_year': self.default_vacation_var.get(),
+                'sick_days_per_year': self.default_sick_var.get(),
+                'business_days_per_week': 5 
+            }
+
+            # Collect company data from GUI
+            company_data = {
+                'companyname': self.company_name_var.get(),
+                'companystreet': self.company_street_var.get(),
+                'companycity': self.company_city_var.get(),
+                'companyphone': self.company_phone_var.get(),
+                'companyemail': self.company_email_var.get(),
+                'company_color_1': self.company_color1_var.get(),
+                'company_color_2': self.company_color2_var.get(),
+                'company_color_3': self.company_color3_var.get()
+            }
+
+            # Collect report settings from GUI
+            report_settings = {
+                'lang': self.template_lang_var.get(),
+                'template': self.template_style_var.get(),
+                'default_output_path': self.output_path_var.get()
+            }
+
+            # Save all settings
+            if self.settings_manager.save_all_settings(general_settings, company_data, report_settings):
+                print("Settings saved successfully!")
+            else:
+                print("Error saving settings!")
+
+        except Exception as e:
+            print(f"Error in save_settings: {e}")
 
     def load_settings(self):
-        """Load settings from database"""
-        # TODO: Implement database load functionality  
-        print("Loading settings...")
-        self.not_yet_implemented()
+        """Load settings from database using SettingsManager"""
+        try:
+            # Load all settings
+            all_settings = self.settings_manager.load_all_settings()
+
+            # Update general settings in GUI
+            general = all_settings.get('general', {})
+            self.std_hours_var.set(general.get('standard_hours_per_day', 8.0))
+            self.overtime_threshold_var.set(general.get('overtime_threshold', 200.0))
+            self.default_vacation_var.set(general.get('vacation_days_per_year', 30))
+            self.default_sick_var.set(general.get('sick_days_per_year', 10))
+
+            # Update company data in GUI
+            company = all_settings.get('company', {})
+            self.company_name_var.set(company.get('companyname', 'Meine Firma GmbH'))
+            self.company_street_var.set(company.get('companystreet', 'Geschäftsstraße 123'))
+            self.company_city_var.set(company.get('companycity', '10115 Berlin'))
+            self.company_phone_var.set(company.get('companyphone', '+49-30-1234567'))
+            self.company_email_var.set(company.get('companyemail', 'contact@meinefirma.com'))
+
+            # Update company colors
+            color1 = company.get('company_color_1', '#1E40AF')
+            color2 = company.get('company_color_2', '#3B82F6')
+            color3 = company.get('company_color_3', '#93C5FD')
+
+            self.company_color1_var.set(color1)
+            self.company_color2_var.set(color2)
+            self.company_color3_var.set(color3)
+
+            # Update color previews
+            self.color1_preview.config(bg=color1)
+            self.color2_preview.config(bg=color2)
+            self.color3_preview.config(bg=color3)
+
+            # Update report settings in GUI
+            report = all_settings.get('report', {})
+            self.template_lang_var.set(report.get('lang', 'en'))
+            self.template_style_var.set(report.get('template', 'color'))
+            self.output_path_var.set(report.get('default_output_path', './reports/'))
+
+            print("Settings loaded successfully!")
+
+        except Exception as e:
+            print(f"Error loading settings: {e}")
 
     def reset_settings(self):
-        """Reset all settings to defaults"""
-        # TODO: Implement reset functionality
-        print("Resetting settings...")
-        self.not_yet_implemented()
+        """Reset all settings to defaults using SettingsManager"""
+        
+        # First ask for confirmation
+        if not messagebox.askyesno(
+            "Confirm Reset", 
+            "Are you sure you want to reset all settings to their default values?\n\n"
+            "This will reset:\n"
+            "• General application settings\n"
+            "• Company information\n"
+            "• Report generation settings\n\n"
+            "This action cannot be undone!"
+        ):
+            return  # User cancelled, do nothing
+        
+        try:
+            if self.settings_manager.reset_to_defaults():
+                # After resetting in database, load the defaults into the GUI
+                self.load_settings()
+                print("Settings reset to defaults!")
+                messagebox.showinfo("Success", "All settings have been reset to their default values!")
+            else:
+                print("Error resetting settings!")
+                messagebox.showerror("Error", "Failed to reset settings to defaults!")
+                
+        except Exception as e:
+            print(f"Error in reset_settings: {e}")
+            messagebox.showerror("Error", f"Failed to reset settings: {e}")
     
     def open_calendar(self):
         """Open calendar popup for date selection"""
