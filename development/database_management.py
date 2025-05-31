@@ -454,6 +454,7 @@ class TimeTracker:
         }
         
         # For work records, calculate time values
+        print(f"NOW CHECKING Record Time:\n\trecord_type:'{record_type}'") #TODO: remove
         if record_type == 'work' and start_times and end_times:
             # Ensure we have valid start/end time pairs (max 3)
             start_times = (start_times or [])[:3]
