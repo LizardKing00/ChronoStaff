@@ -446,7 +446,7 @@ class TimeTracker:
         # Initialize time values
         calculated_values = {
             'total_time_present': 0.0,
-            'break_time': 0.0,
+            'total_break_time': 0.0,
             'hours_worked': 0.0,
             'minimum_break_required': 0.0,
             'max_working_time_compliance': True,
@@ -481,12 +481,12 @@ class TimeTracker:
             cursor.execute('''
                 INSERT OR REPLACE INTO time_records 
                 (employee_id, date, start_time_1, end_time_1, start_time_2, end_time_2, 
-                 start_time_3, end_time_3, break_time, minimum_break_required, 
+                 start_time_3, end_time_3, total_break_time, minimum_break_required, 
                  total_time_present, hours_worked, overtime_hours, record_type, notes,
                  max_working_time_compliance)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (employee_id, record_date, *time_fields, 
-                  calculated_values['break_time'], calculated_values['minimum_break_required'],
+                  calculated_values['total_break_time'], calculated_values['minimum_break_required'],
                   calculated_values['total_time_present'], calculated_values['hours_worked'], 
                   calculated_values['overtime_hours'], record_type, notes,
                   calculated_values['max_working_time_compliance']))
@@ -615,12 +615,12 @@ class TimeTracker:
         # Process records - updated column indices for new schema
         for record in records:
             # New column order: id, employee_id, date, start_time_1, end_time_1, start_time_2, 
-            # end_time_2, start_time_3, end_time_3, break_time, minimum_break_required,
+            # end_time_2, start_time_3, end_time_3, total_break_time, minimum_break_required,
             # total_time_present, hours_worked, overtime_hours, record_type, notes, max_working_time_compliance
             record_type = record[14]  # record_type column
             hours = record[12] or 0.0        # hours_worked column
             overtime = record[13] or 0.0     # overtime_hours column
-            break_time = record[9] or 0.0    # break_time column
+            total_break_time = record[9] or 0.0    # total_break_time column
             time_present = record[11] or 0.0 # total_time_present column
             min_break_req = record[10] or 0.0 # minimum_break_required column
             max_time_compliance = record[16] # max_working_time_compliance column
@@ -628,12 +628,12 @@ class TimeTracker:
             if record_type == 'work':
                 summary['total_work_hours'] += hours
                 summary['total_overtime'] += overtime
-                summary['total_break_time'] += break_time
+                summary['total_break_time'] += total_break_time
                 summary['total_time_present'] += time_present
                 summary['work_days'] += 1
                 
                 # Check compliance violations
-                if break_time < min_break_req:
+                if total_break_time < min_break_req:
                     summary['break_compliance_violations'] += 1
                 if not max_time_compliance:
                     summary['working_time_violations'] += 1
@@ -795,9 +795,9 @@ class TimeTracker:
                 values.append(time_fields[i])
             
             # Add calculated field updates
-            calc_fields = ['break_time', 'minimum_break_required', 'total_time_present', 
+            calc_fields = ['total_break_time', 'minimum_break_required', 'total_time_present', 
                           'hours_worked', 'overtime_hours', 'max_working_time_compliance']
-            calc_values = [calculated_values['break_time'], calculated_values['minimum_break_required'],
+            calc_values = [calculated_values['total_break_time'], calculated_values['minimum_break_required'],
                           calculated_values['total_time_present'], calculated_values['hours_worked'],
                           calculated_values['overtime_hours'], calculated_values['max_working_time_compliance']]
             
@@ -827,7 +827,7 @@ class TimeTracker:
         
         cursor.execute('''
             SELECT start_time_1, end_time_1, start_time_2, end_time_2, start_time_3, end_time_3,
-                   break_time, minimum_break_required, total_time_present, hours_worked, 
+                   total_break_time, minimum_break_required, total_time_present, hours_worked, 
                    overtime_hours, max_working_time_compliance, record_type, notes
             FROM time_records 
             WHERE employee_id = ? AND date = ?
@@ -842,7 +842,7 @@ class TimeTracker:
         return {
             'start_times': [result[0], result[2], result[4]],
             'end_times': [result[1], result[3], result[5]],
-            'break_time': result[6],
+            'total_break_time': result[6],
             'minimum_break_required': result[7],
             'total_time_present': result[8],
             'hours_worked': result[9],
