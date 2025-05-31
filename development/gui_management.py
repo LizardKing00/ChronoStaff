@@ -312,20 +312,20 @@ class EmployeeTimeApp:
         tree_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # Updated columns to match new database schema
-        time_columns = ('Date', 'Times', 'Total Present', 'Worked', 'Breaks', 'Overtime', 'Type', 'Compliance', 'Notes')
+        time_columns = ('Date', 'Time Periods', 'Present', 'Worked', 'Breaks', 'Overtime', 'Type', 'Compliance', 'Notes')
         self.time_tree = ttk.Treeview(tree_container, columns=time_columns, show='headings', height=12)
 
         # Updated column widths for new data
         time_widths = {
-            'Date': 90, 
-            'Times': 120,  # Shows start-end time ranges
-            'Total Present': 90, 
-            'Worked': 70, 
-            'Breaks': 70, 
-            'Overtime': 70, 
-            'Type': 80, 
-            'Compliance': 90,  # Break/Working time compliance
-            'Notes': 150
+            'Date': 80, 
+            'Time Periods': 150,  # Shows start-end time ranges (e.g., "09:00-12:00, 13:00-17:00")
+            'Present': 70,        # total_time_present
+            'Worked': 60,         # hours_worked  
+            'Breaks': 60,         # total_break_time
+            'Overtime': 60,       # overtime_hours
+            'Type': 60,           # record_type
+            'Compliance': 100,    # Break/Working time compliance status
+            'Notes': 120          # notes
         }
 
         for col in time_columns:
@@ -446,7 +446,7 @@ class EmployeeTimeApp:
 
             if success:
                 messagebox.showinfo("Success", message)
-                self.load_time_records() 
+                self.load_time_records_data() 
                 self.hours_var.set(0.0)
                 self.notes_var.set("")
                 self.sort_out_time_entries()
@@ -516,161 +516,6 @@ class EmployeeTimeApp:
         # Show preview
         self.preview_time_calculation()
 
-    def view_time_details(self):
-        """Show detailed information about selected time entry"""
-        selection = self.time_tree.selection()
-        if not selection:
-            messagebox.showwarning("Warning", "Please select a time record to view.")
-            return
-
-        item = self.time_tree.item(selection[0])
-        record_date = item['values'][0]
-
-        employee_id = self.get_selected_employee_id()
-        if not employee_id:
-            messagebox.showerror("Error", "No employee selected.")
-            return
-
-        details = self.time_tracker.get_daily_time_details(employee_id, record_date)
-        if not details:
-            messagebox.showerror("Error", "Could not load time entry details.")
-            return
-
-        # Create details window
-        details_window = tk.Toplevel(self.root)
-        details_window.title(f"Time Entry Details - {record_date}")
-        details_window.geometry("500x400")
-        details_window.resizable(False, False)
-
-        # Main frame
-        main_frame = ttk.Frame(details_window)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Title
-        ttk.Label(main_frame, text=f"Time Entry Details for {record_date}", 
-                  style='Heading.TLabel').pack(pady=(0, 10))
-
-        # Time periods
-        periods_frame = ttk.LabelFrame(main_frame, text="Work Periods")
-        periods_frame.pack(fill=tk.X, pady=(0, 10))
-
-        start_times = [t for t in details['start_times'] if t]
-        end_times = [t for t in details['end_times'] if t]
-
-        if start_times and end_times:
-            for i, (start, end) in enumerate(zip(start_times, end_times)):
-                period_text = f"Period {i+1}: {start} - {end}"
-                ttk.Label(periods_frame, text=period_text).pack(anchor=tk.W, padx=10, pady=2)
-        else:
-            ttk.Label(periods_frame, text="No work periods recorded").pack(anchor=tk.W, padx=10, pady=2)
-
-        # Calculations
-        calc_frame = ttk.LabelFrame(main_frame, text="Time Calculations")
-        calc_frame.pack(fill=tk.X, pady=(0, 10))
-
-        calc_info = [
-            ("Total Time Present:", f"{details['total_time_present']:.2f} hours"),
-            ("Actual Work Time:", f"{details['hours_worked']:.2f} hours"),
-            ("Break Time Taken:", f"{details['break_time']:.2f} hours"),
-            ("Required Break Time:", f"{details['minimum_break_required']:.2f} hours"),
-            ("Overtime Hours:", f"{details['overtime_hours']:.2f} hours"),
-        ]
-
-        for label, value in calc_info:
-            row = ttk.Frame(calc_frame)
-            row.pack(fill=tk.X, padx=10, pady=1)
-            ttk.Label(row, text=label, width=20).pack(side=tk.LEFT)
-            ttk.Label(row, text=value).pack(side=tk.LEFT)
-
-        # Compliance
-        compliance_frame = ttk.LabelFrame(main_frame, text="Compliance Status")
-        compliance_frame.pack(fill=tk.X, pady=(0, 10))
-
-        break_status = "✓ Compliant" if details['break_time'] >= details['minimum_break_required'] else "✗ Insufficient break time"
-        work_status = "✓ Compliant" if details['max_working_time_compliance'] else "✗ Exceeds maximum working hours"
-
-        ttk.Label(compliance_frame, text=f"Break Compliance: {break_status}").pack(anchor=tk.W, padx=10, pady=2)
-        ttk.Label(compliance_frame, text=f"Working Time Compliance: {work_status}").pack(anchor=tk.W, padx=10, pady=2)
-
-        # Notes
-        if details['notes']:
-            notes_frame = ttk.LabelFrame(main_frame, text="Notes")
-            notes_frame.pack(fill=tk.X, pady=(0, 10))
-            ttk.Label(notes_frame, text=details['notes'], wraplength=450).pack(anchor=tk.W, padx=10, pady=5)
-
-        # Close button
-        ttk.Button(main_frame, text="Close", command=details_window.destroy).pack(pady=10)
-
-    def load_month_data(self):
-        """Load and display time records for selected employee and month"""
-        if not self.emp_var.get():
-            return
-
-        employee_id = self.get_selected_employee_id()
-        if not employee_id:
-            return
-
-        try:
-            # Get records for the month
-            records = self.time_tracker.get_monthly_records(
-                employee_id, 
-                self.date_manager.view_year, 
-                self.date_manager.view_month
-            )
-
-            # Clear existing items
-            for item in self.time_tree.get_children():
-                self.time_tree.delete(item)
-
-            # Add records to treeview
-            for record in records:
-                # Parse record data (using new schema column indices)
-                record_id, emp_id, record_date = record[0], record[1], record[2]
-                start_times = [record[3], record[5], record[7]]  # start_time_1,2,3
-                end_times = [record[4], record[6], record[8]]    # end_time_1,2,3
-                break_time = record[9] or 0.0                    # total_break_time
-                min_break = record[10] or 0.0                    # minimum_break_required
-                total_present = record[11] or 0.0                # total_time_present
-                hours_worked = record[12] or 0.0                 # hours_worked
-                overtime = record[13] or 0.0                     # overtime_hours
-                record_type = record[14] or 'work'               # record_type
-                notes = record[15] or ''                         # notes
-                break_compliance = record[9] >= record[10] if record[9] and record[10] else True
-                max_time_compliance = record[16] if len(record) > 16 else True
-
-                # Format time ranges for display
-                time_ranges = []
-                for start, end in zip(start_times, end_times):
-                    if start and end:
-                        time_ranges.append(f"{start}-{end}")
-                times_display = ", ".join(time_ranges) if time_ranges else "N/A"
-
-                # Format compliance status
-                compliance_status = ""
-                if record_type == 'work':
-                    if not break_compliance:
-                        compliance_status += "⚠️Break "
-                    if not max_time_compliance:
-                        compliance_status += "⚠️Time "
-                    if not compliance_status:
-                        compliance_status = "✓"
-
-                # Insert into treeview
-                self.time_tree.insert('', 'end', values=(
-                    record_date,
-                    times_display,
-                    f"{total_present:.1f}h" if total_present else "N/A",
-                    f"{hours_worked:.1f}h",
-                    f"{break_time:.1f}h" if break_time else "N/A",
-                    f"{overtime:.1f}h" if overtime else "0.0h",
-                    record_type.title(),
-                    compliance_status,
-                    notes[:30] + "..." if len(notes) > 30 else notes
-                ))
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load month data: {str(e)}")
-
     def get_selected_employee_id(self):
         """Get the ID of the currently selected employee"""
         if not self.emp_var.get():
@@ -693,15 +538,6 @@ class EmployeeTimeApp:
         self.date_month_var.set(today.month)
         self.date_year_var.set(today.year)
         self.update_date_display()
-
-    def update_date_display(self):
-        """Update the formatted date display"""
-        try:
-            formatted_date = f"{self.date_year_var.get():04d}-{self.date_month_var.get():02d}-{self.day_var.get():02d}"
-            if hasattr(self, 'date_var'):
-                self.date_var.set(formatted_date)
-        except:
-            pass  # Ignore validation errors during typing
 
     def create_reports_tab(self):
         """Create reports tab"""
@@ -1504,49 +1340,49 @@ class EmployeeTimeApp:
             print(f"Error in _get_selected_employee_db_id: {str(e)}")
             return None
 
-    def load_time_records(self, employee_id=None, month=None, year=None):
-        """Load time records for the selected employee and period into the Treeview"""
-        # Clear existing records
-        self.time_tree.delete(*self.time_tree.get_children())
+    # def load_time_records(self, employee_id=None, month=None, year=None):
+    #     """Load time records for the selected employee and period into the Treeview"""
+    #     # Clear existing records
+    #     self.time_tree.delete(*self.time_tree.get_children())
 
-        # Use current selection if no parameters provided
-        employee_id = employee_id or self.selected_employee
-        month = month or self.month_var.get()
-        year = year or self.year_var.get()
+    #     # Use current selection if no parameters provided
+    #     employee_id = employee_id or self.selected_employee
+    #     month = month or self.month_var.get()
+    #     year = year or self.year_var.get()
 
-        if not employee_id:
-            return
+    #     if not employee_id:
+    #         return
 
-        try:
-            conn = self.db_manager.get_connection()
-            cursor = conn.cursor()
+    #     try:
+    #         conn = self.db_manager.get_connection()
+    #         cursor = conn.cursor()
 
-            # Get records for the selected month/year
-            cursor.execute('''
-                SELECT date, hours_worked, overtime_hours, record_type, notes 
-                FROM time_records 
-                WHERE employee_id = ? 
-                AND strftime('%m', date) = ? 
-                AND strftime('%Y', date) = ?
-                ORDER BY date
-            ''', (employee_id, f"{month:02d}", str(year)))
+    #         # Get records for the selected month/year
+    #         cursor.execute('''
+    #             SELECT date, hours_worked, overtime_hours, record_type, notes 
+    #             FROM time_records 
+    #             WHERE employee_id = ? 
+    #             AND strftime('%m', date) = ? 
+    #             AND strftime('%Y', date) = ?
+    #             ORDER BY date
+    #         ''', (employee_id, f"{month:02d}", str(year)))
 
-            records = cursor.fetchall()
+    #         records = cursor.fetchall()
 
-            # Insert records into the Treeview
-            for record in records:
-                self.time_tree.insert('', 'end', values=(
-                    record[0],  # Date
-                    f"{record[1]:.2f}",  # Hours worked
-                    f"{record[2]:.2f}" if record[2] else "0.00",  # Overtime
-                    record[3].capitalize(),  # Type
-                    record[4]  # Notes
-                ))
+    #         # Insert records into the Treeview
+    #         for record in records:
+    #             self.time_tree.insert('', 'end', values=(
+    #                 record[0],  # Date
+    #                 f"{record[1]:.2f}",  # Hours worked
+    #                 f"{record[2]:.2f}" if record[2] else "0.00",  # Overtime
+    #                 record[3].capitalize(),  # Type
+    #                 record[4]  # Notes
+    #             ))
 
-        except Exception as e:
-            messagebox.showerror("Database Error", f"Could not load time records: {str(e)}")
-        finally:
-            conn.close()
+    #     except Exception as e:
+    #         messagebox.showerror("Database Error", f"Could not load time records: {str(e)}")
+    #     finally:
+    #         conn.close()
 
     def sort_out_time_entries(self):
         """Check all entries for current employee/month and consolidate duplicates"""
@@ -1635,7 +1471,7 @@ class EmployeeTimeApp:
                     "Duplicates Consolidated",
                     f"Processed {processed_count} dates with multiple entries"
                 )
-                self.load_time_records()
+                self.load_time_records_data()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to process duplicates: {str(e)}")
@@ -1660,7 +1496,7 @@ class EmployeeTimeApp:
             self.date_manager.set_view_period(selected_date.month, selected_date.year)
             self.update_period_display()
             if self.selected_employee:
-                self.load_time_records()
+                self.load_time_records_data()
 
     def on_date_component_change(self, *args):
         """Handle changes to date component spinboxes"""
@@ -1722,6 +1558,248 @@ class EmployeeTimeApp:
         # If user didn't cancel the dialog
         if dir_path:
             self.output_path_var.set(dir_path)
+
+    def load_time_records_data(self):
+        """Load time records data from database and populate the treeview"""
+        print("=== load_time_records_data STARTED ===")
+
+        # Check if emp_var exists and has a value
+        if not hasattr(self, 'emp_var'):
+            print("ERROR: emp_var attribute does not exist!")
+            return
+
+        emp_name = self.emp_var.get()
+        print(f"Employee selected: '{emp_name}'")
+
+        if not emp_name:
+            print("ERROR: No employee selected!")
+            return
+
+        # Clear existing data
+        current_items = self.time_tree.get_children()
+        print(f"Clearing {len(current_items)} existing items from tree")
+        for item in current_items:
+            self.time_tree.delete(item)
+
+        try:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+
+            # Get employee ID
+            print(f"Looking up employee ID for: {emp_name}")
+            cursor.execute("SELECT id FROM employees WHERE name = ?", (emp_name,))
+            emp_result = cursor.fetchone()
+            if not emp_result:
+                print(f"ERROR: Employee '{emp_name}' not found in database!")
+                return
+
+            employee_id = emp_result[0]
+            print(f"Found employee ID: {employee_id}")
+
+            # Check date manager values
+            print(f"Date manager - Year: {self.date_manager.view_year}, Month: {self.date_manager.view_month}")
+
+            # Get time records for the selected month/year
+            query_params = (employee_id, str(self.date_manager.view_year), f"{self.date_manager.view_month:02d}")
+            print(f"Query parameters: {query_params}")
+
+            cursor.execute("""
+                SELECT date, 
+                       start_time_1, end_time_1,
+                       start_time_2, end_time_2, 
+                       start_time_3, end_time_3,
+                       total_time_present, hours_worked, total_break_time, 
+                       overtime_hours, record_type, notes,
+                       break_compliance, max_working_time_compliance,
+                       minimum_break_required, break_deficit
+                FROM time_records 
+                WHERE employee_id = ? 
+                AND strftime('%Y', date) = ? 
+                AND strftime('%m', date) = ?
+                ORDER BY date
+            """, query_params)
+
+            records = cursor.fetchall()
+            print(f"Found {len(records)} records in database")
+
+            for i, record in enumerate(records):
+                print(f"Processing record {i+1}: {record[0]}")  # Just print the date
+
+                (date, start1, end1, start2, end2, start3, end3, 
+                 total_present, worked, breaks, overtime, rec_type, notes,
+                 break_comp, work_time_comp, min_break_req, break_def) = record
+
+                # Format date
+                from datetime import datetime
+                date_obj = datetime.strptime(date, '%Y-%m-%d')
+                formatted_date = date_obj.strftime('%d.%m')
+
+                # Format time periods
+                time_periods = []
+                if start1 and end1:
+                    time_periods.append(f"{start1}-{end1}")
+                if start2 and end2:
+                    time_periods.append(f"{start2}-{end2}")
+                if start3 and end3:
+                    time_periods.append(f"{start3}-{end3}")
+
+                time_periods_str = ", ".join(time_periods) if time_periods else "—"
+
+                # Format hours (show as HH:MM)
+                def format_hours(hours):
+                    if hours is None or hours == 0:
+                        return "—"
+                    total_minutes = int(hours * 60)
+                    hrs = total_minutes // 60
+                    mins = total_minutes % 60
+                    return f"{hrs}:{mins:02d}"
+
+                # Format compliance status
+                compliance_issues = []
+                if not break_comp and break_def and break_def > 0:
+                    deficit_mins = int(break_def * 60)
+                    compliance_issues.append(f"Break -{deficit_mins}min")
+                if not work_time_comp:
+                    compliance_issues.append("Work time")
+
+                compliance_str = ", ".join(compliance_issues) if compliance_issues else "✓ OK"
+
+                # Add row to treeview
+                values_to_insert = (
+                    formatted_date,        # Date
+                    time_periods_str,      # Time Periods  
+                    format_hours(total_present),  # Present
+                    format_hours(worked),         # Worked
+                    format_hours(breaks),         # Breaks
+                    format_hours(overtime),       # Overtime
+                    rec_type.title() if rec_type else "Work",  # Type
+                    compliance_str,               # Compliance
+                    notes or "—"                  # Notes
+                )
+
+                print(f"Inserting into tree: {values_to_insert}")
+                self.time_tree.insert('', 'end', values=values_to_insert)
+
+            print(f"Successfully inserted {len(records)} records into treeview")
+            conn.close()
+
+        except Exception as e:
+            print(f"ERROR in load_time_records_data: {e}")
+            import traceback
+            traceback.print_exc()
+            if hasattr(self, 'messagebox'):
+                self.messagebox.showerror("Error", f"Failed to load time records: {str(e)}")
+
+        print("=== load_time_records_data FINISHED ===")
+
+    def load_month_data(self):
+        """Load time records for the selected month"""
+        if not hasattr(self, 'emp_var') or not self.emp_var.get():
+            if hasattr(self, 'messagebox'):
+                self.messagebox.showwarning("Warning", "Please select an employee first.")
+            return
+
+        # Update period display
+        self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
+
+        # Load the time records data
+        self.load_time_records_data()
+
+        if hasattr(self, 'messagebox'):
+            self.messagebox.showinfo("Success", f"Loaded data for {self.emp_var.get()} - {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
+
+    def view_time_details(self):
+        """Show detailed view of selected time record"""
+        selection = self.time_tree.selection()
+        if not selection:
+            if hasattr(self, 'messagebox'):
+                self.messagebox.showwarning("Warning", "Please select a time record to view details.")
+            return
+
+        # Get the selected item values
+        item = self.time_tree.item(selection[0])
+        values = item['values']
+
+        if not values:
+            return
+
+        # Create detail window
+        detail_window = tk.Toplevel(self.root)
+        detail_window.title("Time Record Details")
+        detail_window.geometry("450x400")
+        detail_window.resizable(False, False)
+
+        # Get full record from database for detailed view
+        try:
+            conn = sqlite3.connect(self.db_name)
+            cursor = conn.cursor()
+
+            # Get employee ID
+            cursor.execute("SELECT id FROM employees WHERE name = ?", (self.emp_var.get(),))
+            emp_result = cursor.fetchone()
+            if not emp_result:
+                return
+
+            employee_id = emp_result[0]
+
+            # Convert displayed date back to database format
+            displayed_date = values[0]  # DD.MM format
+            full_date = f"{self.date_manager.view_year}-{self.date_manager.view_month:02d}-{displayed_date.split('.')[0].zfill(2)}"
+
+            cursor.execute("""
+                SELECT * FROM time_records 
+                WHERE employee_id = ? AND date = ?
+            """, (employee_id, full_date))
+
+            record = cursor.fetchone()
+            conn.close()
+
+            if record:
+                # Display detailed information
+                details_text = tk.Text(detail_window, wrap=tk.WORD, padx=10, pady=10)
+                details_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+                # Format detailed information
+                detail_info = f"""Date: {full_date}
+        Employee: {self.emp_var.get()}
+
+        Time Periods:
+        """
+                if record[3] and record[4]:  # start_time_1, end_time_1
+                    detail_info += f"  Period 1: {record[3]} - {record[4]}\n"
+                if record[5] and record[6]:  # start_time_2, end_time_2
+                    detail_info += f"  Period 2: {record[5]} - {record[6]}\n"
+                if record[7] and record[8]:  # start_time_3, end_time_3
+                    detail_info += f"  Period 3: {record[7]} - {record[8]}\n"
+
+                detail_info += f"""
+        Time Summary:
+          Total Present: {record[12]:.2f} hours
+          Hours Worked: {record[13]:.2f} hours
+          Break Time: {record[9]:.2f} hours
+          Overtime: {record[14]:.2f} hours
+
+        German Labor Law Compliance:
+          Minimum Break Required: {record[10]:.2f} hours
+          Break Deficit: {record[11]:.2f} hours
+          Break Compliance: {'✓ OK' if record[17] else '✗ Non-compliant'}
+          Working Time Compliance: {'✓ OK' if record[18] else '✗ Non-compliant'}
+
+        Record Information:
+          Type: {record[15].title() if record[15] else 'Work'}
+          Notes: {record[16] if record[16] else 'None'}
+
+        Created: {record[19] if len(record) > 19 else 'N/A'}
+        Updated: {record[20] if len(record) > 20 else 'N/A'}
+        """
+
+                details_text.insert('1.0', detail_info)
+                details_text.config(state=tk.DISABLED)
+
+        except Exception as e:
+            if hasattr(self, 'messagebox'):
+                self.messagebox.showerror("Error", f"Failed to load record details: {str(e)}")
+            detail_window.destroy()
 
   # =============================================================================
   #  TIME MANAGEMENT METHODS
@@ -2026,7 +2104,8 @@ class EmployeeTimeApp:
                 if emp[2] == emp_id:  # emp[2] is employee_id
                     self.selected_employee = emp[0]  # emp[0] is database id
                     break
-            self.load_time_records()  
+            #self.load_time_records()
+            self.load_time_records_data()  
 
     def clear_employee_selection(self):
         """Handle employee selection"""
@@ -2143,7 +2222,7 @@ class EmployeeTimeApp:
                 messagebox.showinfo("Info", f"Deleted {deleted_rows} time entries")
 
             # Refresh the display
-            self.load_time_records()
+            self.load_time_records_data()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to delete time entry: {str(e)}")
