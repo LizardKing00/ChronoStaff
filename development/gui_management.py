@@ -44,6 +44,9 @@ class EmployeeTimeApp:
         self.configure_styles()
         self.create_widgets()
 
+        self.start_times = None
+        self.end_times = None
+
     def setup_ui_variables(self):
         """Initialize all UI variables"""
         # Date component variables
@@ -408,25 +411,38 @@ class EmployeeTimeApp:
 
         try:
             # Get date components from form fields
+            print("Selecting the date:") #TODO: remove
             day = self.day_var.get()
             month = self.date_month_var.get()
             year = self.date_year_var.get()
-
             # Create date string in YYYY-MM-DD format
             entry_date = f"{year:04d}-{month:02d}-{day:02d}"
+            
+            self.start_times = [var.get().strip() for var in self.start_time_vars if var.get().strip()]
+            self.end_times = [var.get().strip() for var in self.end_time_vars if var.get().strip()]
+            self.clear_time_form()
 
+            print(f"day:\t\t{day}") #TODO: remove
+            print(f"month:\t\t{month}") #TODO: remove
+            print(f"year:\t\t{year}") #TODO: remove
+            print(f"entry_date:\t{entry_date}") #TODO: remove
             # Get time entry data
             hours = self.hours_var.get()
             record_type = self.type_var.get()
             notes = self.notes_var.get()
 
+            print(f"hours\t\t{hours}") #TODO: remove
+            print(f"record_type\t\t{record_type}") #TODO: remove
+            print(f"notes\t\t{notes}") #TODO: remove
+
             success, message = self.time_tracker.add_time_record(
-                self.selected_employee, 
-                entry_date, 
-                hours, 
-                record_type, 
-                notes
-            )
+                employee_id = self.selected_employee, 
+                record_date = entry_date, 
+                start_times=self.start_times, 
+                end_times=self.end_times,
+                record_type=record_type, 
+                notes=notes
+                )
 
             if success:
                 messagebox.showinfo("Success", message)
@@ -435,6 +451,8 @@ class EmployeeTimeApp:
                 self.notes_var.set("")
                 self.sort_out_time_entries()
             else:
+                print("Error!") #TODO: remove
+                print(message) #TODO: remove
                 messagebox.showerror("Error", message)
 
         except ValueError as e:
