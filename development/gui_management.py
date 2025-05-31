@@ -169,7 +169,7 @@ class EmployeeTimeApp:
         self.refresh_employee_list()
     
     def create_time_tracking_tab(self):
-        """Create time tracking tab"""
+        """Create time tracking tab with multiple start/end times and German labor law compliance"""
         time_frame = ttk.Frame(self.notebook)
         self.notebook.add(time_frame, text="Time Tracking")
 
@@ -191,105 +191,499 @@ class EmployeeTimeApp:
         self.emp_combo.pack(side=tk.LEFT, padx=(5, 20))
         self.emp_combo.bind('<<ComboboxSelected>>', self.on_employee_select)
 
-        # Month/Year selection #TODO: MAKE THIS INTO FRAME
+        # Month/Year selection frame
+        period_frame = ttk.Frame(emp_row)
+        period_frame.pack(side=tk.LEFT, padx=(20, 0))
+
+        self.period_display_var = tk.StringVar()
         self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
-        ttk.Label(emp_row, textvariable=self.period_display_var, style='Info.TLabel').pack(side=tk.LEFT, padx=(5, 20))
+        ttk.Label(period_frame, textvariable=self.period_display_var, style='Info.TLabel').pack(side=tk.LEFT, padx=(5, 20))
 
-        ttk.Button(emp_row, text="Load Month Data", command=self.load_month_data).pack(side=tk.LEFT, padx=5)
+        ttk.Button(period_frame, text="Load Month Data", command=self.load_month_data).pack(side=tk.LEFT, padx=5)
 
-        # Time entry section #TODO: MAKE THIS INTO FRAME
+        # Time entry section
         entry_frame = ttk.LabelFrame(main_container, text="Add/Edit Time Entry")
         entry_frame.pack(fill=tk.X, pady=(0, 10))
 
-        # First row - Date and basic info
-        date_selection_row = ttk.Frame(entry_frame)
-        date_selection_row.pack(fill=tk.X, padx=10, pady=5)
+        # Date selection frame
+        date_selection_frame = ttk.Frame(entry_frame)
+        date_selection_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        ttk.Label(date_selection_row, text="Date:").pack(side=tk.LEFT)
-        self.date_display_var = tk.StringVar()
+        # Date input section
+        date_input_frame = ttk.Frame(date_selection_frame)
+        date_input_frame.pack(side=tk.LEFT)
+
+        ttk.Label(date_input_frame, text="Date:").pack(side=tk.LEFT)
 
         # Date entry fields
         self.day_var = tk.IntVar(value=date.today().day)
         self.date_month_var = tk.IntVar(value=date.today().month)
         self.date_year_var = tk.IntVar(value=date.today().year)
 
-        # formatted date (YYYY-MM-DD)
-        self.date_var = tk.StringVar()
-        self.update_date_display()
+        # Date spinboxes
+        self.day_spin = tk.Spinbox(date_input_frame, from_=1, to=31, textvariable=self.day_var, width=4)
+        self.day_spin.pack(side=tk.LEFT, padx=(15, 2))
+        ttk.Label(date_input_frame, text="/").pack(side=tk.LEFT)
 
-        # Date spinboxes with better validation
-        self.day_spin = tk.Spinbox(date_selection_row, from_=1, to=31, textvariable=self.day_var, width=4, )
-        self.day_spin.pack(side=tk.LEFT, padx=(15,2))
-        ttk.Label(date_selection_row, text="/").pack(side=tk.LEFT)
-
-        self.month_spin = tk.Spinbox(date_selection_row, from_=1, to=12, textvariable=self.month_var, width=4)
+        self.month_spin = tk.Spinbox(date_input_frame, from_=1, to=12, textvariable=self.date_month_var, width=4)
         self.month_spin.pack(side=tk.LEFT, padx=2)
-        ttk.Label(date_selection_row, text="/").pack(side=tk.LEFT)
+        ttk.Label(date_input_frame, text="/").pack(side=tk.LEFT)
 
-        self.year_spin = tk.Spinbox(date_selection_row, from_=2020, to=2030, textvariable=self.year_var, width=6)
+        self.year_spin = tk.Spinbox(date_input_frame, from_=2020, to=2030, textvariable=self.date_year_var, width=6)
         self.year_spin.pack(side=tk.LEFT, padx=2)
 
-        # Calendar and today buttons
-        ttk.Button(date_selection_row, text="Launch Calendar", width=15, command=self.open_calendar).pack(side=tk.LEFT, padx=(105,5))
-        # Set to today #TODO: this icon is ugly, change this 
-        ttk.Button(date_selection_row, text="Today", width=10, command=self.set_to_today).pack(side=tk.LEFT, padx=5)
+        # Calendar buttons
+        calendar_frame = ttk.Frame(date_selection_frame)
+        calendar_frame.pack(side=tk.LEFT, padx=(20, 0))
 
+        ttk.Button(calendar_frame, text="Calendar", width=12, command=self.open_calendar).pack(side=tk.LEFT, padx=5)
+        ttk.Button(calendar_frame, text="Today", width=8, command=self.set_to_today).pack(side=tk.LEFT, padx=5)
 
-        # Second row - Notes and buttons
-        notes_row = ttk.Frame(entry_frame)
-        notes_row.pack(fill=tk.X, padx=2, pady=5)
+        # Time entries frame (new section for multiple start/end times)
+        time_entries_frame = ttk.LabelFrame(entry_frame, text="Work Time Periods (Max 3)")
+        time_entries_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        # Hours and type
-        ttk.Label(notes_row, text="Hours:").pack(side=tk.LEFT, padx=(10, 0))
-        self.hours_var = tk.DoubleVar()
-        ttk.Entry(notes_row, textvariable=self.hours_var, width=8).pack(side=tk.LEFT, padx=5)
+        # Initialize time entry variables
+        self.start_time_vars = [tk.StringVar() for _ in range(3)]
+        self.end_time_vars = [tk.StringVar() for _ in range(3)]
 
-        ttk.Label(notes_row, text="Type:").pack(side=tk.LEFT, padx=(10, 0))
+        # Create 3 rows for time entries
+        for i in range(3):
+            time_row = ttk.Frame(time_entries_frame)
+            time_row.pack(fill=tk.X, padx=10, pady=2)
+
+            ttk.Label(time_row, text=f"Period {i+1}:", width=10).pack(side=tk.LEFT)
+
+            ttk.Label(time_row, text="Start:").pack(side=tk.LEFT, padx=(10, 2))
+            start_entry = ttk.Entry(time_row, textvariable=self.start_time_vars[i], width=8)
+            start_entry.pack(side=tk.LEFT, padx=(0, 5))
+
+            ttk.Label(time_row, text="End:").pack(side=tk.LEFT, padx=(5, 2))
+            end_entry = ttk.Entry(time_row, textvariable=self.end_time_vars[i], width=8)
+            end_entry.pack(side=tk.LEFT, padx=(0, 10))
+
+            # Add time format hint
+            if i == 0:
+                ttk.Label(time_row, text="(Format: HH:MM, e.g., 09:00)", 
+                         style='TLabel', foreground='gray').pack(side=tk.LEFT, padx=(10, 0))
+
+        # Break time and additional options frame
+        options_frame = ttk.Frame(entry_frame)
+        options_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # Record type and notes in first row
+        type_notes_row = ttk.Frame(options_frame)
+        type_notes_row.pack(fill=tk.X, pady=2)
+
+        ttk.Label(type_notes_row, text="Type:").pack(side=tk.LEFT)
         self.type_var = tk.StringVar(value="work")
-        type_combo = ttk.Combobox(notes_row, textvariable=self.type_var, 
+        type_combo = ttk.Combobox(type_notes_row, textvariable=self.type_var, 
                                  values=["work", "vacation", "sick", "holiday"], width=10, state="readonly")
-        type_combo.pack(side=tk.LEFT, padx=5)
+        type_combo.pack(side=tk.LEFT, padx=(5, 15))
 
-
-        ttk.Label(notes_row, text="Notes:").pack(side=tk.LEFT, padx=(10,10))
+        ttk.Label(type_notes_row, text="Notes:").pack(side=tk.LEFT)
         self.notes_var = tk.StringVar()
-        ttk.Entry(notes_row, textvariable=self.notes_var, width=50).pack(side=tk.LEFT, padx=(5, 20))
+        ttk.Entry(type_notes_row, textvariable=self.notes_var, width=40).pack(side=tk.LEFT, padx=(5, 20))
 
-        ttk.Button(notes_row, text="Add Entry", command=self.add_time_entry).pack(side=tk.RIGHT, padx=5)
+        # Action buttons
+        button_frame = ttk.Frame(options_frame)
+        button_frame.pack(side=tk.RIGHT)
 
-        # Bind events to update date display
-        for widget in [self.day_spin, self.month_spin, self.year_spin]:
-            widget.bind('<FocusOut>', lambda e: self.update_date_display())
-            widget.bind('<KeyRelease>', lambda e: self.root.after(100, self.update_date_display))
+        ttk.Button(button_frame, text="Calculate Preview", command=self.preview_time_calculation).pack(side=tk.LEFT, padx=(5, 2))
+        ttk.Button(button_frame, text="Add Entry", command=self.add_time_entry).pack(side=tk.LEFT, padx=2)
+        ttk.Button(button_frame, text="Clear Form", command=self.clear_time_form).pack(side=tk.LEFT, padx=(2, 5))
+
+        # Calculation preview frame
+        self.preview_frame = ttk.LabelFrame(entry_frame, text="Time Calculation Preview")
+        self.preview_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        self.preview_text = tk.Text(self.preview_frame, height=3, wrap=tk.WORD, state=tk.DISABLED)
+        self.preview_text.pack(fill=tk.X, padx=5, pady=5)
 
         # Time records display
         records_frame = ttk.LabelFrame(main_container, text="Time Records")
         records_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Time records treeview
-        time_columns = ('Date', 'Hours', 'Overtime', 'Type', 'Notes')
-        self.time_tree = ttk.Treeview(records_frame, columns=time_columns, show='headings', height=10)
+        # Treeview and scrollbars should all use grid within their container
+        tree_container = ttk.Frame(records_frame)
+        tree_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        time_widths = {'Date': 100, 'Hours': 80, 'Overtime': 80, 'Type': 100, 'Notes': 200}
+        # Updated columns to match new database schema
+        time_columns = ('Date', 'Times', 'Total Present', 'Worked', 'Breaks', 'Overtime', 'Type', 'Compliance', 'Notes')
+        self.time_tree = ttk.Treeview(tree_container, columns=time_columns, show='headings', height=12)
+
+        # Updated column widths for new data
+        time_widths = {
+            'Date': 90, 
+            'Times': 120,  # Shows start-end time ranges
+            'Total Present': 90, 
+            'Worked': 70, 
+            'Breaks': 70, 
+            'Overtime': 70, 
+            'Type': 80, 
+            'Compliance': 90,  # Break/Working time compliance
+            'Notes': 150
+        }
+
         for col in time_columns:
             self.time_tree.heading(col, text=col)
             self.time_tree.column(col, width=time_widths.get(col, 100))
 
-        time_scrollbar = ttk.Scrollbar(records_frame, orient=tk.VERTICAL, command=self.time_tree.yview)
-        self.time_tree.configure(yscrollcommand=time_scrollbar.set)
+        # Scrollbars for the treeview
+        time_v_scrollbar = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self.time_tree.yview)
+        time_h_scrollbar = ttk.Scrollbar(tree_container, orient=tk.HORIZONTAL, command=self.time_tree.xview)
+        self.time_tree.configure(yscrollcommand=time_v_scrollbar.set, xscrollcommand=time_h_scrollbar.set)
 
-        self.time_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-        time_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=10)
+        # Grid layout for treeview and scrollbars
+        self.time_tree.grid(row=0, column=0, sticky='nsew')
+        time_v_scrollbar.grid(row=0, column=1, sticky='ns')
+        time_h_scrollbar.grid(row=1, column=0, sticky='ew')
+
+        tree_container.grid_rowconfigure(0, weight=1)
+        tree_container.grid_columnconfigure(0, weight=1)
 
         # Time records buttons
         time_btn_frame = ttk.Frame(records_frame)
         time_btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        ttk.Button(time_btn_frame,width=18, text="Edit Selected", command=self.not_yet_implemented).pack(side=tk.TOP, padx=5, pady=5, anchor=tk.E)
-        ttk.Button(time_btn_frame,width=18, text="Delete Selected", command=self.delete_time_entry).pack(side=tk.TOP, padx=5, pady=5, anchor=tk.E)
-        ttk.Button(time_btn_frame,width=18, text="Sort/Clean Duplicates", command=self.sort_out_time_entries).pack(side=tk.TOP, padx=5, pady=5, anchor=tk.E)
+
+        ttk.Button(time_btn_frame, width=18, text="Edit Selected", command=self.edit_time_entry).pack(side=tk.TOP, padx=5, pady=2, anchor=tk.E)
+        ttk.Button(time_btn_frame, width=18, text="Delete Selected", command=self.delete_time_entry).pack(side=tk.TOP, padx=5, pady=2, anchor=tk.E)
+        ttk.Button(time_btn_frame, width=18, text="View Details", command=self.view_time_details).pack(side=tk.TOP, padx=5, pady=2, anchor=tk.E)
+        ttk.Button(time_btn_frame, width=18, text="Refresh Records", command=self.load_month_data).pack(side=tk.TOP, padx=5, pady=2, anchor=tk.E)
+
+        # Bind events
+        for widget in [self.day_spin, self.month_spin, self.year_spin]:
+            widget.bind('<FocusOut>', lambda e: self.update_date_display())
+            widget.bind('<KeyRelease>', lambda e: self.root.after(100, self.update_date_display))
+
+        # Bind double-click to edit
+        self.time_tree.bind('<Double-1>', lambda e: self.edit_time_entry())
 
         self.update_employee_combo()
+
+    def preview_time_calculation(self):
+        """Preview time calculation before adding entry"""
+        if self.type_var.get() != 'work':
+            self.update_preview_text("Non-work entries don't require time calculation.")
+            return
+
+        # Get time entries
+        start_times = [var.get().strip() for var in self.start_time_vars if var.get().strip()]
+        end_times = [var.get().strip() for var in self.end_time_vars if var.get().strip()]
+
+        if not start_times or not end_times or len(start_times) != len(end_times):
+            self.update_preview_text("Please enter matching start and end times.")
+            return
+
+        try:
+            # Use the time tracker's calculation method
+            calculated = self.time_tracker.calculate_time_entry(start_times, end_times)
+
+            preview_text = f"""Time Calculation Preview:
+     • Total Time Present: {calculated['total_time_present']:.2f} hours
+     • Work Time: {calculated['hours_worked']:.2f} hours  
+     • Break Time: {calculated['total_break_time']:.2f} hours
+     • Required Break: {calculated['minimum_break_required']:.2f} hours
+     • Overtime: {calculated['overtime_hours']:.2f} hours
+     • Break Compliance: {'✓' if calculated['break_compliance'] else '✗ Insufficient break'}
+     • Working Time Compliance: {'✓' if calculated['max_working_time_compliance'] else '✗ Exceeds 10h limit'}"""
+
+            self.update_preview_text(preview_text)
+
+        except Exception as e:
+            self.update_preview_text(f"Error in calculation: {str(e)}")
+
+    def update_preview_text(self, text):
+        """Update the preview text widget"""
+        self.preview_text.config(state=tk.NORMAL)
+        self.preview_text.delete(1.0, tk.END)
+        self.preview_text.insert(1.0, text)
+        self.preview_text.config(state=tk.DISABLED)
+
+    def add_time_entry(self):
+        """Add time entry for selected employee"""
+        if not self.selected_employee:
+            messagebox.showwarning("Warning", "Please select an employee first.")
+            return
+
+        try:
+            # Get date components from form fields
+            day = self.day_var.get()
+            month = self.date_month_var.get()
+            year = self.date_year_var.get()
+
+            # Create date string in YYYY-MM-DD format
+            entry_date = f"{year:04d}-{month:02d}-{day:02d}"
+
+            # Get time entry data
+            hours = self.hours_var.get()
+            record_type = self.type_var.get()
+            notes = self.notes_var.get()
+
+            success, message = self.time_tracker.add_time_record(
+                self.selected_employee, 
+                entry_date, 
+                hours, 
+                record_type, 
+                notes
+            )
+
+            if success:
+                messagebox.showinfo("Success", message)
+                self.load_time_records() 
+                self.hours_var.set(0.0)
+                self.notes_var.set("")
+                self.sort_out_time_entries()
+            else:
+                messagebox.showerror("Error", message)
+
+        except ValueError as e:
+            messagebox.showerror("Error", f"Invalid date or time value: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("Error", f"An unexpected error occurred: {str(e)}")
+
+    def clear_time_form(self):
+        """Clear all time entry form fields"""
+        for var in self.start_time_vars + self.end_time_vars:
+            var.set("")
+        self.notes_var.set("")
+        self.type_var.set("work")
+        self.update_preview_text("Enter time periods above and click 'Calculate Preview' to see calculations.")
+
+    def edit_time_entry(self):
+        """Edit selected time entry"""
+        selection = self.time_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a time record to edit.")
+            return
+
+        # Get record data
+        item = self.time_tree.item(selection[0])
+        record_date = item['values'][0]
+
+        employee_id = self.get_selected_employee_id()
+        if not employee_id:
+            messagebox.showerror("Error", "No employee selected.")
+            return
+
+        # Get detailed time information
+        details = self.time_tracker.get_daily_time_details(employee_id, record_date)
+        if not details:
+            messagebox.showerror("Error", "Could not load time entry details.")
+            return
+
+        # Populate form with existing data
+        start_times = [t for t in details['start_times'] if t]
+        end_times = [t for t in details['end_times'] if t]
+
+        # Clear form first
+        self.clear_time_form()
+
+        # Set date
+        date_parts = record_date.split('-')
+        self.date_year_var.set(int(date_parts[0]))
+        self.date_month_var.set(int(date_parts[1]))
+        self.day_var.set(int(date_parts[2]))
+
+        # Set times
+        for i, (start, end) in enumerate(zip(start_times, end_times)):
+            if i < 3:  # Max 3 periods
+                self.start_time_vars[i].set(start)
+                self.end_time_vars[i].set(end)
+
+        # Set other fields
+        self.type_var.set(details['record_type'])
+        self.notes_var.set(details['notes'] or '')
+
+        # Show preview
+        self.preview_time_calculation()
+
+    def view_time_details(self):
+        """Show detailed information about selected time entry"""
+        selection = self.time_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a time record to view.")
+            return
+
+        item = self.time_tree.item(selection[0])
+        record_date = item['values'][0]
+
+        employee_id = self.get_selected_employee_id()
+        if not employee_id:
+            messagebox.showerror("Error", "No employee selected.")
+            return
+
+        details = self.time_tracker.get_daily_time_details(employee_id, record_date)
+        if not details:
+            messagebox.showerror("Error", "Could not load time entry details.")
+            return
+
+        # Create details window
+        details_window = tk.Toplevel(self.root)
+        details_window.title(f"Time Entry Details - {record_date}")
+        details_window.geometry("500x400")
+        details_window.resizable(False, False)
+
+        # Main frame
+        main_frame = ttk.Frame(details_window)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Title
+        ttk.Label(main_frame, text=f"Time Entry Details for {record_date}", 
+                  style='Heading.TLabel').pack(pady=(0, 10))
+
+        # Time periods
+        periods_frame = ttk.LabelFrame(main_frame, text="Work Periods")
+        periods_frame.pack(fill=tk.X, pady=(0, 10))
+
+        start_times = [t for t in details['start_times'] if t]
+        end_times = [t for t in details['end_times'] if t]
+
+        if start_times and end_times:
+            for i, (start, end) in enumerate(zip(start_times, end_times)):
+                period_text = f"Period {i+1}: {start} - {end}"
+                ttk.Label(periods_frame, text=period_text).pack(anchor=tk.W, padx=10, pady=2)
+        else:
+            ttk.Label(periods_frame, text="No work periods recorded").pack(anchor=tk.W, padx=10, pady=2)
+
+        # Calculations
+        calc_frame = ttk.LabelFrame(main_frame, text="Time Calculations")
+        calc_frame.pack(fill=tk.X, pady=(0, 10))
+
+        calc_info = [
+            ("Total Time Present:", f"{details['total_time_present']:.2f} hours"),
+            ("Actual Work Time:", f"{details['hours_worked']:.2f} hours"),
+            ("Break Time Taken:", f"{details['break_time']:.2f} hours"),
+            ("Required Break Time:", f"{details['minimum_break_required']:.2f} hours"),
+            ("Overtime Hours:", f"{details['overtime_hours']:.2f} hours"),
+        ]
+
+        for label, value in calc_info:
+            row = ttk.Frame(calc_frame)
+            row.pack(fill=tk.X, padx=10, pady=1)
+            ttk.Label(row, text=label, width=20).pack(side=tk.LEFT)
+            ttk.Label(row, text=value).pack(side=tk.LEFT)
+
+        # Compliance
+        compliance_frame = ttk.LabelFrame(main_frame, text="Compliance Status")
+        compliance_frame.pack(fill=tk.X, pady=(0, 10))
+
+        break_status = "✓ Compliant" if details['break_time'] >= details['minimum_break_required'] else "✗ Insufficient break time"
+        work_status = "✓ Compliant" if details['max_working_time_compliance'] else "✗ Exceeds maximum working hours"
+
+        ttk.Label(compliance_frame, text=f"Break Compliance: {break_status}").pack(anchor=tk.W, padx=10, pady=2)
+        ttk.Label(compliance_frame, text=f"Working Time Compliance: {work_status}").pack(anchor=tk.W, padx=10, pady=2)
+
+        # Notes
+        if details['notes']:
+            notes_frame = ttk.LabelFrame(main_frame, text="Notes")
+            notes_frame.pack(fill=tk.X, pady=(0, 10))
+            ttk.Label(notes_frame, text=details['notes'], wraplength=450).pack(anchor=tk.W, padx=10, pady=5)
+
+        # Close button
+        ttk.Button(main_frame, text="Close", command=details_window.destroy).pack(pady=10)
+
+    def load_month_data(self):
+        """Load and display time records for selected employee and month"""
+        if not self.emp_var.get():
+            return
+
+        employee_id = self.get_selected_employee_id()
+        if not employee_id:
+            return
+
+        try:
+            # Get records for the month
+            records = self.time_tracker.get_monthly_records(
+                employee_id, 
+                self.date_manager.view_year, 
+                self.date_manager.view_month
+            )
+
+            # Clear existing items
+            for item in self.time_tree.get_children():
+                self.time_tree.delete(item)
+
+            # Add records to treeview
+            for record in records:
+                # Parse record data (using new schema column indices)
+                record_id, emp_id, record_date = record[0], record[1], record[2]
+                start_times = [record[3], record[5], record[7]]  # start_time_1,2,3
+                end_times = [record[4], record[6], record[8]]    # end_time_1,2,3
+                break_time = record[9] or 0.0                    # total_break_time
+                min_break = record[10] or 0.0                    # minimum_break_required
+                total_present = record[11] or 0.0                # total_time_present
+                hours_worked = record[12] or 0.0                 # hours_worked
+                overtime = record[13] or 0.0                     # overtime_hours
+                record_type = record[14] or 'work'               # record_type
+                notes = record[15] or ''                         # notes
+                break_compliance = record[9] >= record[10] if record[9] and record[10] else True
+                max_time_compliance = record[16] if len(record) > 16 else True
+
+                # Format time ranges for display
+                time_ranges = []
+                for start, end in zip(start_times, end_times):
+                    if start and end:
+                        time_ranges.append(f"{start}-{end}")
+                times_display = ", ".join(time_ranges) if time_ranges else "N/A"
+
+                # Format compliance status
+                compliance_status = ""
+                if record_type == 'work':
+                    if not break_compliance:
+                        compliance_status += "⚠️Break "
+                    if not max_time_compliance:
+                        compliance_status += "⚠️Time "
+                    if not compliance_status:
+                        compliance_status = "✓"
+
+                # Insert into treeview
+                self.time_tree.insert('', 'end', values=(
+                    record_date,
+                    times_display,
+                    f"{total_present:.1f}h" if total_present else "N/A",
+                    f"{hours_worked:.1f}h",
+                    f"{break_time:.1f}h" if break_time else "N/A",
+                    f"{overtime:.1f}h" if overtime else "0.0h",
+                    record_type.title(),
+                    compliance_status,
+                    notes[:30] + "..." if len(notes) > 30 else notes
+                ))
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load month data: {str(e)}")
+
+    def get_selected_employee_id(self):
+        """Get the ID of the currently selected employee"""
+        if not self.emp_var.get():
+            return None
+
+        # Extract employee ID from the combo selection (assuming format "Name (ID: xxx)")
+        emp_text = self.emp_var.get()
+        if "(ID:" in emp_text:
+            try:
+                emp_id = int(emp_text.split("(ID:")[1].split(")")[0].strip())
+                return emp_id
+            except (IndexError, ValueError):
+                return None
+        return None
+
+    def set_to_today(self):
+        """Set date fields to today's date"""
+        today = date.today()
+        self.day_var.set(today.day)
+        self.date_month_var.set(today.month)
+        self.date_year_var.set(today.year)
+        self.update_date_display()
+
+    def update_date_display(self):
+        """Update the formatted date display"""
+        try:
+            formatted_date = f"{self.date_year_var.get():04d}-{self.date_month_var.get():02d}-{self.day_var.get():02d}"
+            if hasattr(self, 'date_var'):
+                self.date_var.set(formatted_date)
+        except:
+            pass  # Ignore validation errors during typing
 
     def create_reports_tab(self):
         """Create reports tab"""
@@ -715,7 +1109,7 @@ class EmployeeTimeApp:
 
     def reset_settings(self):
         """Reset all settings to defaults using SettingsManager"""
-        
+
         # First ask for confirmation
         if not messagebox.askyesno(
             "Confirm Reset", 
@@ -727,7 +1121,7 @@ class EmployeeTimeApp:
             "This action cannot be undone!"
         ):
             return  # User cancelled, do nothing
-        
+
         try:
             if self.settings_manager.reset_to_defaults():
                 # After resetting in database, load the defaults into the GUI
@@ -737,7 +1131,7 @@ class EmployeeTimeApp:
             else:
                 print("Error resetting settings!")
                 messagebox.showerror("Error", "Failed to reset settings to defaults!")
-                
+
         except Exception as e:
             print(f"Error in reset_settings: {e}")
             messagebox.showerror("Error", f"Failed to reset settings: {e}")
@@ -1621,53 +2015,53 @@ class EmployeeTimeApp:
         self.selected_employee = None
         self.selected_employee_id = None
 
-    def load_month_data(self):
-        """Load time data for selected month"""
-        if not self.selected_employee:
-            messagebox.showwarning("Warning", "Please select an employee first.")
-            return
+    # def load_month_data(self):
+    #     """Load time data for selected month"""
+    #     if not self.selected_employee:
+    #         messagebox.showwarning("Warning", "Please select an employee first.")
+    #         return
         
-        month = self.month_var.get()
-        year = self.year_var.get()
+    #     month = self.month_var.get()
+    #     year = self.year_var.get()
         
-        # Load and display month data
-        records = self.time_tracker.get_monthly_records(self.selected_employee, year, month)
-        summary = self.time_tracker.calculate_monthly_summary(self.selected_employee, year, month)
-        self.load_time_records()
+    #     # Load and display month data
+    #     records = self.time_tracker.get_monthly_records(self.selected_employee, year, month)
+    #     summary = self.time_tracker.calculate_monthly_summary(self.selected_employee, year, month)
+    #     self.load_time_records()
 
-        # Display summary (implement display logic)
-        messagebox.showinfo("Month Summary", 
-                          f"Work Hours: {summary['total_work_hours']:.1f} / {summary['hours_per_week']:.1f} per week\n"
-                          f"Overtime: {summary['total_overtime']:.1f}\n"
-                          f"Vacation Days: {summary['vacation_days']} (Remaining: {summary['vacation_days_remaining']})\n"
-                          f"Sick Days: {summary['sick_days']} (Remaining: {summary['sick_days_remaining']})")
+    #     # Display summary (implement display logic)
+    #     messagebox.showinfo("Month Summary", 
+    #                       f"Work Hours: {summary['total_work_hours']:.1f} / {summary['hours_per_week']:.1f} per week\n"
+    #                       f"Overtime: {summary['total_overtime']:.1f}\n"
+    #                       f"Vacation Days: {summary['vacation_days']} (Remaining: {summary['vacation_days_remaining']})\n"
+    #                       f"Sick Days: {summary['sick_days']} (Remaining: {summary['sick_days_remaining']})")
     
-    def add_time_entry(self):
-        """Add time entry for selected employee"""
-        if not self.selected_employee:
-            messagebox.showwarning("Warning", "Please select an employee first.")
-            return
-        try:
-            entry_date = datetime.strptime(self.date_var.get(), "%Y-%m-%d").date()
-            hours = self.hours_var.get()
-            record_type = self.type_var.get()
-            notes = self.notes_var.get()
-            success, message = self.time_tracker.add_time_record(
-                self.selected_employee, entry_date, hours, record_type, notes
-            )
-            if success:
-                messagebox.showinfo("Success", message)
-                self.load_time_records() 
-                self.hours_var.set(0.0)
-                self.notes_var.set("")
-                self.sort_out_time_entries()
+    # def add_time_entry(self):
+    #     """Add time entry for selected employee"""
+    #     if not self.selected_employee:
+    #         messagebox.showwarning("Warning", "Please select an employee first.")
+    #         return
+    #     try:
+    #         entry_date = datetime.strptime(self.date_var.get(), "%Y-%m-%d").date()
+    #         hours = self.hours_var.get()
+    #         record_type = self.type_var.get()
+    #         notes = self.notes_var.get()
+    #         success, message = self.time_tracker.add_time_record(
+    #             self.selected_employee, entry_date, hours, record_type, notes
+    #         )
+    #         if success:
+    #             messagebox.showinfo("Success", message)
+    #             self.load_time_records() 
+    #             self.hours_var.set(0.0)
+    #             self.notes_var.set("")
+    #             self.sort_out_time_entries()
 
-            else:
-                messagebox.showerror("Error", message)
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid date (YYYY-MM-DD)")
-        except AttributeError:
-            messagebox.showerror("Error", "Could not find date attribute. Please check the date field.")
+    #         else:
+    #             messagebox.showerror("Error", message)
+    #     except ValueError:
+    #         messagebox.showerror("Error", "Please enter a valid date (YYYY-MM-DD)")
+    #     except AttributeError:
+    #         messagebox.showerror("Error", "Could not find date attribute. Please check the date field.")
 
     def delete_time_entry(self):
         """Delete selected time entry from database (single record only)"""
@@ -1739,23 +2133,23 @@ class EmployeeTimeApp:
             if 'conn' in locals():
                 conn.close()
 
-    def edit_time_entry(self):
-        """Edit selected time entry via pop-up window"""
-        selected_item = self.time_tree.selection()
+    # def edit_time_entry(self):
+    #     """Edit selected time entry via pop-up window"""
+    #     selected_item = self.time_tree.selection()
 
-        if not selected_item:
-            messagebox.showwarning("Warning", "Please select a time entry to edit")
-            return
+    #     if not selected_item:
+    #         messagebox.showwarning("Warning", "Please select a time entry to edit")
+    #         return
 
-        try:
-            item_values = self.time_tree.item(selected_item[0])['values']
-            if not item_values or len(item_values) < 5:
-                raise ValueError("Invalid record selected")
+    #     try:
+    #         item_values = self.time_tree.item(selected_item[0])['values']
+    #         if not item_values or len(item_values) < 5:
+    #             raise ValueError("Invalid record selected")
 
-            self.create_edit_window(item_values)
+    #         self.create_edit_window(item_values)
 
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to edit time entry: {str(e)}")
+    #     except Exception as e:
+    #         messagebox.showerror("Error", f"Failed to edit time entry: {str(e)}")
     
     def generate_employee_report(self):
         """Generate report for selected employee"""
