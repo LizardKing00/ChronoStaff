@@ -1568,12 +1568,21 @@ class EmployeeTimeApp:
             print("ERROR: emp_var attribute does not exist!")
             return
 
-        emp_name = self.emp_var.get()
-        print(f"Employee selected: '{emp_name}'")
+        emp_display_name = self.emp_var.get()
+        print(f"Employee selected (raw): '{emp_display_name}'")
 
-        if not emp_name:
+        if not emp_display_name:
             print("ERROR: No employee selected!")
             return
+
+        # Extract just the name part before the parentheses
+        # e.g., "Max Musterman (0001)" -> "Max Musterman"
+        if '(' in emp_display_name:
+            emp_name = emp_display_name.split('(')[0].strip()
+        else:
+            emp_name = emp_display_name.strip()
+        
+        print(f"Employee name extracted: '{emp_name}'")
 
         # Clear existing data
         current_items = self.time_tree.get_children()
@@ -1691,7 +1700,7 @@ class EmployeeTimeApp:
                 self.messagebox.showerror("Error", f"Failed to load time records: {str(e)}")
 
         print("=== load_time_records_data FINISHED ===")
-
+    
     def load_month_data(self):
         """Load time records for the selected month"""
         if not hasattr(self, 'emp_var') or not self.emp_var.get():
@@ -2111,54 +2120,6 @@ class EmployeeTimeApp:
         """Handle employee selection"""
         self.selected_employee = None
         self.selected_employee_id = None
-
-    # def load_month_data(self):
-    #     """Load time data for selected month"""
-    #     if not self.selected_employee:
-    #         messagebox.showwarning("Warning", "Please select an employee first.")
-    #         return
-        
-    #     month = self.month_var.get()
-    #     year = self.year_var.get()
-        
-    #     # Load and display month data
-    #     records = self.time_tracker.get_monthly_records(self.selected_employee, year, month)
-    #     summary = self.time_tracker.calculate_monthly_summary(self.selected_employee, year, month)
-    #     self.load_time_records()
-
-    #     # Display summary (implement display logic)
-    #     messagebox.showinfo("Month Summary", 
-    #                       f"Work Hours: {summary['total_work_hours']:.1f} / {summary['hours_per_week']:.1f} per week\n"
-    #                       f"Overtime: {summary['total_overtime']:.1f}\n"
-    #                       f"Vacation Days: {summary['vacation_days']} (Remaining: {summary['vacation_days_remaining']})\n"
-    #                       f"Sick Days: {summary['sick_days']} (Remaining: {summary['sick_days_remaining']})")
-    
-    # def add_time_entry(self):
-    #     """Add time entry for selected employee"""
-    #     if not self.selected_employee:
-    #         messagebox.showwarning("Warning", "Please select an employee first.")
-    #         return
-    #     try:
-    #         entry_date = datetime.strptime(self.date_var.get(), "%Y-%m-%d").date()
-    #         hours = self.hours_var.get()
-    #         record_type = self.type_var.get()
-    #         notes = self.notes_var.get()
-    #         success, message = self.time_tracker.add_time_record(
-    #             self.selected_employee, entry_date, hours, record_type, notes
-    #         )
-    #         if success:
-    #             messagebox.showinfo("Success", message)
-    #             self.load_time_records() 
-    #             self.hours_var.set(0.0)
-    #             self.notes_var.set("")
-    #             self.sort_out_time_entries()
-
-    #         else:
-    #             messagebox.showerror("Error", message)
-    #     except ValueError:
-    #         messagebox.showerror("Error", "Please enter a valid date (YYYY-MM-DD)")
-    #     except AttributeError:
-    #         messagebox.showerror("Error", "Could not find date attribute. Please check the date field.")
 
     def delete_time_entry(self):
         """Delete selected time entry from database (single record only)"""
