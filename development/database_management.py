@@ -45,16 +45,38 @@ class DatabaseManager:
             )
         ''')
 
-        # Time records table
+        # Time records table with German break requirements
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS time_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 employee_id INTEGER,
                 date DATE NOT NULL,
-                hours_worked REAL DEFAULT 0.0,
-                overtime_hours REAL DEFAULT 0.0,
+                
+                -- Time entries (up to 3 start/end pairs per day)
+                start_time_1 TIME,
+                end_time_1 TIME,
+                start_time_2 TIME,
+                end_time_2 TIME,
+                start_time_3 TIME,
+                end_time_3 TIME,
+                
+                -- Break calculations
+                total_break_time REAL DEFAULT 0.0,  -- Total break time taken (in hours)
+                minimum_break_required REAL DEFAULT 0.0,  -- Minimum break required by German law (in hours)
+                break_deficit REAL DEFAULT 0.0,  -- If employee didn't take enough break (in hours)
+                
+                -- Working time calculations
+                total_time_present REAL DEFAULT 0.0,  -- Total time from first start to last end (in hours)
+                hours_worked REAL DEFAULT 0.0,  -- Actual work time (total_time_present - breaks)
+                overtime_hours REAL DEFAULT 0.0,  -- Hours beyond standard working time
+                
                 record_type TEXT CHECK(record_type IN ('work', 'vacation', 'sick', 'holiday')),
                 notes TEXT,
+                
+                -- Compliance flags
+                break_compliance BOOLEAN DEFAULT 1,  -- Whether minimum break requirements were met
+                max_working_time_compliance BOOLEAN DEFAULT 1,  -- Whether daily working time limits were respected
+                
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (employee_id) REFERENCES employees (id)
@@ -100,13 +122,20 @@ class DatabaseManager:
             )
         ''')
 
-        # Insert default settings
+        # Insert default settings including German labor law requirements
         default_settings = [
             ('standard_hours_per_day', '8.0'),
             ('overtime_threshold', '200.0'),
             ('vacation_days_per_year', '30'),
             ('sick_days_per_year', '10'),
-            ('business_days_per_week', '5')
+            ('business_days_per_week', '5'),
+            # German labor law settings (Arbeitszeitgesetz - ArbZG)
+            ('max_daily_working_hours', '8.0'),  # Standard max 8 hours per day
+            ('max_daily_working_hours_extended', '10.0'),  # Extended max 10 hours (with conditions)
+            ('min_break_6_hours', '0.5'),  # 30 min break for >6 hours work
+            ('min_break_9_hours', '0.75'),  # 45 min break for >9 hours work
+            ('min_rest_period_hours', '11.0'),  # 11 hours rest between work days
+            ('max_weekly_working_hours', '48.0')  # Max 48 hours per week average over 6 months
         ]
 
         cursor.executemany('''
@@ -388,9 +417,19 @@ class TimeTracker:
     def __init__(self, db_manager):
         self.db = db_manager
     
-    def add_time_record(self, employee_id, record_date, hours_worked=0.0, 
+    def add_time_record(self, employee_id, record_date, start_times=None, end_times=None,
                        record_type='work', notes=""):
-        """Add time record for employee"""
+        """
+        Add time record for employee with multiple start/end times
+        
+        Args:
+            employee_id (int): Employee ID
+            record_date (str): Date in YYYY-MM-DD format
+            start_times (list): List of start times ['HH:MM', 'HH:MM', 'HH:MM'] (max 3)
+            end_times (list): List of end times ['HH:MM', 'HH:MM', 'HH:MM'] (max 3)
+            record_type (str): 'work', 'vacation', 'sick', 'holiday'
+            notes (str): Additional notes
+        """
         conn = self.db.get_connection()
         cursor = conn.cursor()
         
@@ -404,17 +443,54 @@ class TimeTracker:
         
         standard_daily_hours = result[0] / 5.0  # assuming 5 work days per week
         
-        # Calculate overtime if work record
-        overtime_hours = 0.0
-        if record_type == 'work' and hours_worked > standard_daily_hours:
-            overtime_hours = hours_worked - standard_daily_hours
+        # Initialize time values
+        calculated_values = {
+            'total_time_present': 0.0,
+            'total_break_time': 0.0,
+            'hours_worked': 0.0,
+            'minimum_break_required': 0.0,
+            'max_working_time_compliance': True,
+            'overtime_hours': 0.0
+        }
+        
+        # For work records, calculate time values
+        print(f"NOW CHECKING Record Time:\n\trecord_type:'{record_type}'") #TODO: remove
+        if record_type == 'work' and start_times and end_times:
+            # Ensure we have valid start/end time pairs (max 3)
+            start_times = (start_times or [])[:3]
+            end_times = (end_times or [])[:3]
+            
+            # Calculate working hours and breaks using the database manager method
+            calculated_values = self.calculate_time_entry(start_times, end_times)
+            
+            # Calculate overtime based on standard daily hours
+            if calculated_values['hours_worked'] > standard_daily_hours:
+                calculated_values['overtime_hours'] = calculated_values['hours_worked'] - standard_daily_hours
         
         try:
+            # Prepare time fields (pad with None if less than 3 entries)
+            time_fields = [None] * 6  # 3 start times + 3 end times
+            if start_times:
+                for i, time_val in enumerate(start_times[:3]):
+                    if time_val:
+                        time_fields[i*2] = time_val  # start_time_1, start_time_2, start_time_3
+            if end_times:
+                for i, time_val in enumerate(end_times[:3]):
+                    if time_val:
+                        time_fields[i*2 + 1] = time_val  # end_time_1, end_time_2, end_time_3
+            
             cursor.execute('''
                 INSERT OR REPLACE INTO time_records 
-                (employee_id, date, hours_worked, overtime_hours, record_type, notes)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (employee_id, record_date, hours_worked, overtime_hours, record_type, notes))
+                (employee_id, date, start_time_1, end_time_1, start_time_2, end_time_2, 
+                 start_time_3, end_time_3, total_break_time, minimum_break_required, 
+                 total_time_present, hours_worked, overtime_hours, record_type, notes,
+                 max_working_time_compliance)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (employee_id, record_date, *time_fields, 
+                  calculated_values['total_break_time'], calculated_values['minimum_break_required'],
+                  calculated_values['total_time_present'], calculated_values['hours_worked'], 
+                  calculated_values['overtime_hours'], record_type, notes,
+                  calculated_values['max_working_time_compliance']))
             
             conn.commit()
             return True, "Time record added successfully"
@@ -422,6 +498,31 @@ class TimeTracker:
             return False, f"Error adding time record: {str(e)}"
         finally:
             conn.close()
+    
+    def add_simple_time_record(self, employee_id, record_date, hours_worked=0.0, 
+                              record_type='work', notes=""):
+        """
+        Legacy method for adding simple time records (backwards compatibility)
+        Creates a single 8-hour work period with calculated breaks
+        """
+        if record_type == 'work' and hours_worked > 0:
+            # Create a simple 8-hour work day starting at 9:00 AM
+            from datetime import datetime, timedelta
+            start_time = datetime.strptime('09:00', '%H:%M')
+            
+            # Calculate end time based on hours worked + minimum breaks
+            minimum_break = self.calculate_german_break_requirements(hours_worked)
+            total_time_needed = hours_worked + minimum_break
+            end_time = start_time + timedelta(hours=total_time_needed)
+            
+            start_times = [start_time.strftime('%H:%M')]
+            end_times = [end_time.strftime('%H:%M')]
+            
+            return self.add_time_record(employee_id, record_date, start_times, end_times, 
+                                      record_type, notes)
+        else:
+            # For non-work records, use the new method with empty times
+            return self.add_time_record(employee_id, record_date, [], [], record_type, notes)
     
     def get_time_records(self, employee_id=None, start_date=None, end_date=None):
         """Get time records with optional filters"""
@@ -456,6 +557,7 @@ class TimeTracker:
     
     def get_monthly_records(self, employee_id, year, month):
         """Get all records for employee for specific month"""
+        from datetime import date, timedelta
         start_date = date(year, month, 1)
         if month == 12:
             end_date = date(year + 1, 1, 1) - timedelta(days=1)
@@ -466,6 +568,7 @@ class TimeTracker:
     
     def get_yearly_records(self, employee_id, year):
         """Get all records for employee for specific year"""
+        from datetime import date
         start_date = date(year, 1, 1)
         end_date = date(year, 12, 31)
         return self.get_time_records(employee_id, start_date, end_date)
@@ -495,6 +598,8 @@ class TimeTracker:
             'period_end': str(end_date),
             'total_work_hours': 0.0,
             'total_overtime': 0.0,
+            'total_break_time': 0.0,
+            'total_time_present': 0.0,
             'vacation_days': 0,
             'sick_days': 0,
             'holiday_days': 0,
@@ -503,19 +608,37 @@ class TimeTracker:
             'hourly_rate': hourly_rate,
             'regular_pay': 0.0,
             'overtime_pay': 0.0,
-            'total_pay': 0.0
+            'total_pay': 0.0,
+            'break_compliance_violations': 0,
+            'working_time_violations': 0
         }
         
-        # Process records
+        # Process records - updated column indices for new schema
         for record in records:
-            record_type = record[5]  # record_type column
-            hours = record[3] or 0.0        # hours_worked column
-            overtime = record[4] or 0.0     # overtime_hours column
+            # New column order: id, employee_id, date, start_time_1, end_time_1, start_time_2, 
+            # end_time_2, start_time_3, end_time_3, total_break_time, minimum_break_required,
+            # total_time_present, hours_worked, overtime_hours, record_type, notes, max_working_time_compliance
+            record_type = record[14]  # record_type column
+            hours = record[12] or 0.0        # hours_worked column
+            overtime = record[13] or 0.0     # overtime_hours column
+            total_break_time = record[9] or 0.0    # total_break_time column
+            time_present = record[11] or 0.0 # total_time_present column
+            min_break_req = record[10] or 0.0 # minimum_break_required column
+            max_time_compliance = record[16] # max_working_time_compliance column
             
             if record_type == 'work':
                 summary['total_work_hours'] += hours
                 summary['total_overtime'] += overtime
+                summary['total_break_time'] += total_break_time
+                summary['total_time_present'] += time_present
                 summary['work_days'] += 1
+                
+                # Check compliance violations
+                if total_break_time < min_break_req:
+                    summary['break_compliance_violations'] += 1
+                if not max_time_compliance:
+                    summary['working_time_violations'] += 1
+                    
             elif record_type == 'vacation':
                 summary['vacation_days'] += 1
             elif record_type == 'sick':
@@ -533,6 +656,7 @@ class TimeTracker:
     
     def calculate_monthly_summary(self, employee_id, year, month):
         """Calculate monthly summary for employee"""
+        from datetime import date, timedelta
         start_date = date(year, month, 1)
         if month == 12:
             end_date = date(year + 1, 1, 1) - timedelta(days=1)
@@ -592,41 +716,97 @@ class TimeTracker:
         finally:
             conn.close()
     
-    def update_time_record(self, record_id, **kwargs):
-        """Update a time record"""
+    def update_time_record(self, record_id, start_times=None, end_times=None, **kwargs):
+        """
+        Update a time record with new start/end times or other fields
+        
+        Args:
+            record_id (int): Record ID to update
+            start_times (list): List of start times (max 3)
+            end_times (list): List of end times (max 3)
+            **kwargs: Other fields to update (date, record_type, notes)
+        """
         conn = self.db.get_connection()
         cursor = conn.cursor()
         
-        valid_fields = ['date', 'hours_worked', 'record_type', 'notes']
+        # Get current record data
+        cursor.execute('SELECT * FROM time_records WHERE id = ?', (record_id,))
+        current_record = cursor.fetchone()
+        
+        if not current_record:
+            conn.close()
+            return False, "Time record not found"
+        
+        # Get employee's standard daily hours for overtime calculation
+        cursor.execute('''
+            SELECT hours_per_week FROM employees 
+            WHERE id = (SELECT employee_id FROM time_records WHERE id = ?)
+        ''', (record_id,))
+        emp_result = cursor.fetchone()
+        standard_daily_hours = emp_result[0] / 5.0 if emp_result else 8.0
+        
+        valid_fields = ['date', 'record_type', 'notes']
         fields = []
         values = []
         
+        # Handle regular field updates
         for key, value in kwargs.items():
             if key in valid_fields:
                 fields.append(f"{key} = ?")
                 values.append(value)
         
-        if fields:
-            # Recalculate overtime if hours_worked is being updated
-            if 'hours_worked' in kwargs:
-                # Get employee's standard daily hours
-                cursor.execute('''
-                    SELECT e.hours_per_week, tr.record_type 
-                    FROM employees e 
-                    JOIN time_records tr ON e.id = tr.employee_id 
-                    WHERE tr.id = ?
-                ''', (record_id,))
-                result = cursor.fetchone()
-                
-                if result:
-                    hours_per_week, record_type = result
-                    standard_daily_hours = hours_per_week / 5.0
-                    
-                    if record_type == 'work' or kwargs.get('record_type') == 'work':
-                        overtime = max(0, kwargs['hours_worked'] - standard_daily_hours)
-                        fields.append("overtime_hours = ?")
-                        values.append(overtime)
+        # Handle time updates if provided
+        if start_times is not None or end_times is not None:
+            # Use current times if not provided
+            current_start_times = [current_record[3], current_record[5], current_record[7]]  # start_time_1,2,3
+            current_end_times = [current_record[4], current_record[6], current_record[8]]    # end_time_1,2,3
             
+            # Filter out None values and convert to list
+            current_start_times = [t for t in current_start_times if t is not None]
+            current_end_times = [t for t in current_end_times if t is not None]
+            
+            if start_times is None:
+                start_times = current_start_times
+            if end_times is None:
+                end_times = current_end_times
+            
+            # Recalculate time values
+            calculated_values = self.calculate_time_entry(start_times, end_times)
+            
+            # Calculate overtime
+            if calculated_values['hours_worked'] > standard_daily_hours:
+                calculated_values['overtime_hours'] = calculated_values['hours_worked'] - standard_daily_hours
+            
+            # Update time fields (pad with None if less than 3 entries) # TODO: this is fucked up, I want the user to enter the time one by one, in case he want to enter more than 3 enterences, he gets an error, and this can't be processed.
+            time_fields = [None] * 6  # 3 start times + 3 end times
+            if start_times:
+                for i, time_val in enumerate(start_times[:3]):
+                    if time_val:
+                        time_fields[i*2] = time_val
+            if end_times:
+                for i, time_val in enumerate(end_times[:3]):
+                    if time_val:
+                        time_fields[i*2 + 1] = time_val
+            
+            # Add time field updates
+            time_field_names = ['start_time_1', 'end_time_1', 'start_time_2', 
+                               'end_time_2', 'start_time_3', 'end_time_3']
+            for i, field_name in enumerate(time_field_names):
+                fields.append(f"{field_name} = ?")
+                values.append(time_fields[i])
+            
+            # Add calculated field updates
+            calc_fields = ['total_break_time', 'minimum_break_required', 'total_time_present', 
+                          'hours_worked', 'overtime_hours', 'max_working_time_compliance']
+            calc_values = [calculated_values['total_break_time'], calculated_values['minimum_break_required'],
+                          calculated_values['total_time_present'], calculated_values['hours_worked'],
+                          calculated_values['overtime_hours'], calculated_values['max_working_time_compliance']]
+            
+            for field, value in zip(calc_fields, calc_values):
+                fields.append(f"{field} = ?")
+                values.append(value)
+        
+        if fields:
             fields.append("updated_at = CURRENT_TIMESTAMP")
             values.append(record_id)
             query = f"UPDATE time_records SET {', '.join(fields)} WHERE id = ?"
@@ -640,9 +820,132 @@ class TimeTracker:
         
         conn.close()
         return False, "No valid fields to update"
+    
+    def get_daily_time_details(self, employee_id, record_date):
+        """Get detailed time information for a specific day"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT start_time_1, end_time_1, start_time_2, end_time_2, start_time_3, end_time_3,
+                   total_break_time, minimum_break_required, total_time_present, hours_worked, 
+                   overtime_hours, max_working_time_compliance, record_type, notes
+            FROM time_records 
+            WHERE employee_id = ? AND date = ?
+        ''', (employee_id, record_date))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result:
+            return None
+        
+        return {
+            'start_times': [result[0], result[2], result[4]],
+            'end_times': [result[1], result[3], result[5]],
+            'total_break_time': result[6],
+            'minimum_break_required': result[7],
+            'total_time_present': result[8],
+            'hours_worked': result[9],
+            'overtime_hours': result[10],
+            'max_working_time_compliance': result[11],
+            'record_type': result[12],
+            'notes': result[13]
+        }
+
+    def calculate_german_break_requirements(self, total_working_hours):
+        """
+        Calculate minimum break requirements according to German labor law (ArbZG §4)
+        
+        Args:
+            total_working_hours (float): Total working hours for the day
+            
+        Returns:
+            float: Minimum break time required in hours
+        """
+        if total_working_hours > 9:
+            return 0.75  # 45 minutes for more than 9 hours
+        elif total_working_hours > 6:
+            return 0.5   # 30 minutes for more than 6 hours
+        else:
+            return 0.0   # No mandatory break for 6 hours or less
+
+    def calculate_time_entry(self, start_times, end_times, break_times=None):
+        """
+        Calculate working hours, breaks, and compliance for a day's time entries
+        
+        Args:
+            start_times (list): List of start times (up to 3)
+            end_times (list): List of end times (up to 3)
+            break_times (list, optional): Manual break times if provided
+            
+        Returns:
+            dict: Calculated values for database insertion
+        """
+        from datetime import datetime, timedelta
+        
+        # Convert time strings to datetime objects for calculation
+        work_periods = []
+        for i in range(min(len(start_times), len(end_times))):
+            if start_times[i] and end_times[i]:
+                start = datetime.strptime(start_times[i], '%H:%M')
+                end = datetime.strptime(end_times[i], '%H:%M')
+                if end > start:
+                    work_periods.append((start, end))
+        
+        if not work_periods:
+            return {
+                'total_time_present': 0.0,
+                'total_break_time': 0.0,
+                'hours_worked': 0.0,
+                'minimum_break_required': 0.0,
+                'break_deficit': 0.0,
+                'break_compliance': True,
+                'max_working_time_compliance': True,
+                'overtime_hours': 0.0
+            }
+        
+        # Calculate total time present (from first start to last end)
+        first_start = min(period[0] for period in work_periods)
+        last_end = max(period[1] for period in work_periods)
+        total_time_present = (last_end - first_start).total_seconds() / 3600.0
+        
+        # Calculate actual work time (sum of all work periods)
+        total_work_time = sum((end - start).total_seconds() / 3600.0 for start, end in work_periods)
+        
+        # Calculate break time (time present - actual work time)
+        total_break_time = total_time_present - total_work_time
+        
+        # Calculate minimum break required
+        minimum_break_required = self.calculate_german_break_requirements(total_work_time)
+        
+        # Check break compliance
+        break_deficit = max(0, minimum_break_required - total_break_time)
+        break_compliance = break_deficit == 0
+        
+        # Adjust hours worked if break deficit exists
+        hours_worked = total_work_time - break_deficit
+        
+        # Calculate overtime (assuming 8 hours standard day)
+        standard_hours = 8.0
+        overtime_hours = max(0, hours_worked - standard_hours)
+        
+        # Check max working time compliance (10 hours max per day)
+        max_working_time_compliance = total_work_time <= 10.0
+        
+        return {
+            'total_time_present': round(total_time_present, 2),
+            'total_break_time': round(total_break_time, 2),
+            'hours_worked': round(hours_worked, 2),
+            'minimum_break_required': round(minimum_break_required, 2),
+            'break_deficit': round(break_deficit, 2),
+            'break_compliance': break_compliance,
+            'max_working_time_compliance': max_working_time_compliance,
+            'overtime_hours': round(overtime_hours, 2)
+        }
 
 # =============================================================================
-# EMPLOYEE MANAGEMENT CLASS
+# SETTINGS MANAGEMENT CLASS
 # =============================================================================
 
 class SettingsManager:
