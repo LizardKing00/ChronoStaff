@@ -1152,56 +1152,107 @@ class EmployeeTimeApp:
         self.update_details_combo()
 
     def create_employee_details_window(self):
-        """Create a standalone window to display details of the selected employee"""
-        # Get selected employee
+        """Create a standalone window to display details of the selected employee - FIXED VERSION"""
+        print("=== CREATE EMPLOYEE DETAILS WINDOW STARTED ===")
+        
+        # Get selected employee from TreeView
         selection = self.emp_tree.selection()
+        print(f"TreeView selection: {selection}")
+        
         if not selection:
+            print("ERROR: No employee selected in TreeView")
             messagebox.showwarning("Warning", "Please select an employee first.")
             return
-
+    
         item = self.emp_tree.item(selection[0])
-        employee_id = item['values'][0] 
-
+        print(f"Selected item data: {item}")
+        print(f"Item values: {item['values']}")
+        
+        if not item['values'] or len(item['values']) == 0:
+            print("ERROR: No values in selected item")
+            messagebox.showerror("Error", "Invalid selection - no data found")
+            return
+    
+        # EXTRACT database ID from TreeView
+        # If you're using the formatted version "DB_ID: 1", parse it
+        # If you're using just the number "1", use it directly
+        first_column = item['values'][0]
+        print(f"First column value: '{first_column}'")
+        
+        try:
+            if isinstance(first_column, str) and first_column.startswith("DB_ID: "):
+                # Parse "DB_ID: 1" format
+                database_id = int(first_column.replace("DB_ID: ", ""))
+                print(f"Parsed database_id from formatted string: {database_id}")
+            else:
+                # Direct conversion (should be the database ID)
+                database_id = int(first_column)
+                print(f"Direct conversion database_id: {database_id}")
+        except ValueError as e:
+            print(f"ERROR parsing database ID from '{first_column}': {e}")
+            messagebox.showerror("Error", f"Invalid database ID format: {first_column}")
+            return
+    
+        # Get employee data using database ID
+        print(f"Looking up employee in database with database ID: {database_id}")
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM employees WHERE employee_id = ?", (employee_id,))
+        # FIXED: Search by database ID (id column) instead of employee_id
+        cursor.execute("SELECT * FROM employees WHERE id = ?", (database_id,))
         employee = cursor.fetchone()
+        print(f"Database query result: {employee}")
         conn.close()
-
+    
         if not employee:
+            print(f"ERROR: Employee with database ID {database_id} not found in database")
+            
+            # Additional debugging - show what employees actually exist
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, employee_id, name FROM employees")
+            all_employees = cursor.fetchall()
+            print("All employees in database:")
+            for emp in all_employees:
+                print(f"  DB_ID: {emp[0]}, Employee_ID: '{emp[1]}', Name: {emp[2]}")
+            conn.close()
+            
             messagebox.showerror("Error", "Selected employee not found in database")
             return
-
+    
+        print(f"Employee found: {employee}")
+        print(f"Creating details window for: {employee[1]} ({employee[2]})")
+    
+        # Create details window
         details_window = tk.Toplevel(self.root)
         details_window.title(f"Employee Details - {employee[1]} ({employee[2]})")
         details_window.geometry("500x450")
         details_window.transient(self.root)
         details_window.grab_set()
-
         details_window.protocol("WM_DELETE_WINDOW", details_window.destroy)
-
+    
         container = ttk.Frame(details_window)
         container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
+    
         header_frame = ttk.Frame(container)
         header_frame.pack(fill=tk.X, pady=(0, 10))
-
+    
         ttk.Label(header_frame, 
                  text=f"{employee[1]} ({employee[2]})", 
                  font=('Arial', 12, 'bold')).pack(side=tk.LEFT)
-
+    
         ttk.Button(
             header_frame,
             text="Close",
             command=details_window.destroy
         ).pack(side=tk.RIGHT)
-
+    
         details_notebook = ttk.Notebook(container)
         details_notebook.pack(fill=tk.BOTH, expand=True)
-
+    
+        # Personal Info Tab
         personal_frame = ttk.Frame(details_notebook)
         details_notebook.add(personal_frame, text="Personal Info")
-
+    
         personal_info = [
             ("Name:", employee[1]),
             ("Employee ID:", employee[2]),
@@ -1211,36 +1262,45 @@ class EmployeeTimeApp:
             ("Hire Date:", employee[6] if employee[6] else "N/A"),
             ("Status:", "Active" if employee[10] else "Inactive")
         ]
-
+    
         for row, (label, value) in enumerate(personal_info):
             ttk.Label(personal_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
             ttk.Label(personal_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
-
+    
+        # Work Details Tab
         work_frame = ttk.Frame(details_notebook)
         details_notebook.add(work_frame, text="Work Details")
-
+    
         current_year = datetime.now().year
         start_of_year = date(current_year, 1, 1)
-
+    
+        print("Calculating vacation and sick days...")
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
-
+    
+        # FIXED: Use database_id (employee[0]) for time_records queries
+        print(f"Querying vacation days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
             WHERE employee_id = ? AND date >= ? AND record_type = 'vacation'
-        ''', (employee[0], start_of_year))
+        ''', (database_id, start_of_year))  # Use database_id, not employee[0]
         vacation_used = cursor.fetchone()[0]
-
+        print(f"Vacation days used: {vacation_used}")
+    
+        print(f"Querying sick days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
             WHERE employee_id = ? AND date >= ? AND record_type = 'sick'
-        ''', (employee[0], start_of_year))
+        ''', (database_id, start_of_year))  # Use database_id, not employee[0]
         sick_used = cursor.fetchone()[0]
+        print(f"Sick days used: {sick_used}")
         conn.close()
-
-        vacation_remaining = max(0, (employee[8] if len(employee) > 8 else 20)) - vacation_used
+    
+        vacation_remaining = max(0, (employee[8] if len(employee) > 8 else 20) - vacation_used)
         sick_remaining = max(0, (employee[9] if len(employee) > 9 else 10) - sick_used)
-
+    
+        print(f"Vacation remaining: {vacation_remaining}, Sick remaining: {sick_remaining}")
+    
         work_info = [
             ("Hours/Week:", f"{employee[7]:.1f}" if len(employee) > 7 else "40.0"),
             ("Vacation Days/Year:", str(employee[8]) if len(employee) > 8 else "20"),
@@ -1248,18 +1308,25 @@ class EmployeeTimeApp:
             ("Vacation Days Remaining:", f"{vacation_remaining}"),
             ("Sick Days Remaining:", f"{sick_remaining}")
         ]
-
+    
         for row, (label, value) in enumerate(work_info):
             ttk.Label(work_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
             ttk.Label(work_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
-
+    
+        # Statistics Tab
         stats_frame = ttk.Frame(details_notebook)
         details_notebook.add(stats_frame, text="Statistics")
-
+    
         current_month = datetime.now().month
-        monthly_summary = self.time_tracker.calculate_monthly_summary(employee[0], current_year, current_month)
-        yearly_summary = self.time_tracker.calculate_yearly_summary(employee[0], current_year)
-
+        
+        print("Calculating monthly and yearly summaries...")
+        # FIXED: Use database_id for summary calculations
+        monthly_summary = self.time_tracker.calculate_monthly_summary(database_id, current_year, current_month)
+        yearly_summary = self.time_tracker.calculate_yearly_summary(database_id, current_year)
+        
+        print(f"Monthly summary: {monthly_summary}")
+        print(f"Yearly summary: {yearly_summary}")
+    
         stats_info = [
             (f"{calendar.month_name[current_month]} {current_year}:", ""),
             ("Work Hours:", f"{monthly_summary['total_work_hours']:.1f}"),
@@ -1269,11 +1336,13 @@ class EmployeeTimeApp:
             ("YTD Work Hours:", f"{yearly_summary['total_work_hours']:.1f}"),
             ("YTD Overtime:", f"{yearly_summary['total_overtime']:.1f}")
         ]
-
+    
         for row, (label, value) in enumerate(stats_info):
             ttk.Label(stats_frame, text=label).grid(row=row, column=0, sticky='w', padx=5, pady=5)
             if value:  # Skip empty value for header row
                 ttk.Label(stats_frame, text=value, foreground='blue').grid(row=row, column=1, sticky='w', padx=5, pady=5)
+    
+        print("=== CREATE EMPLOYEE DETAILS WINDOW COMPLETED ===\n")
 
   # =============================================================================
   # HELPER METHODS
@@ -1800,10 +1869,10 @@ class EmployeeTimeApp:
                 status = "Active" if emp[10] else "Inactive"
 
                 # FORMAT the database ID as "DB_ID: {number}"
-                formatted_db_id = f"DB_ID: {emp[0]}"
+                formatted_db_id = f"{emp[0]}"
 
                 values_to_insert = (
-                    formatted_db_id,    # "DB_ID: 1", "DB_ID: 2", etc.
+                    formatted_db_id,    # "1", "2", etc.
                     emp[1],    # name
                     emp[3] or "",    # position
                     f"${emp[4]:.2f}" if emp[4] else "$0.00",  # hourly_rate
@@ -1946,42 +2015,35 @@ class EmployeeTimeApp:
     def edit_employee_dialog(self):
         """Show dialog to edit existing employee - with DB_ID parsing"""
         print("=== EDIT EMPLOYEE DIALOG STARTED ===")
-        
+
         selection = self.emp_tree.selection()
         print(f"TreeView selection: {selection}")
-        
+
         if not selection:
             print("ERROR: No employee selected in TreeView")
             messagebox.showwarning("Warning", "Please select an employee to edit.")
             return
-    
+
         item = self.emp_tree.item(selection[0])
         print(f"Selected item data: {item}")
         print(f"Item values: {item['values']}")
-        
+
         if not item['values'] or len(item['values']) == 0:
             print("ERROR: No values in selected item")
             messagebox.showerror("Error", "Invalid selection - no data found")
             return
-        
-        # EXTRACT database ID from formatted string "DB_ID: 1" -> 1
-        formatted_db_id = item['values'][0]  # e.g., "DB_ID: 1"
+
+        formatted_db_id = item['values'][0]  # e.g., "1"
         print(f"Formatted DB ID from TreeView: '{formatted_db_id}'")
-        
+
         try:
-            # Parse "DB_ID: 1" to extract just the number "1"
-            if formatted_db_id.startswith("DB_ID: "):
-                database_id = int(formatted_db_id.replace("DB_ID: ", ""))
-                print(f"Extracted database_id: {database_id}")
-            else:
-                # Fallback: try to convert directly (in case format changes)
-                database_id = int(formatted_db_id)
-                print(f"Direct conversion database_id: {database_id}")
+            database_id = int(formatted_db_id)
+            print(f"Direct conversion database_id: {database_id}")
         except ValueError as e:
             print(f"ERROR parsing database ID from '{formatted_db_id}': {e}")
             messagebox.showerror("Error", f"Invalid database ID format: {formatted_db_id}")
             return
-    
+
         # Get full employee data from database using database ID
         print(f"Looking up employee in database with database ID: {database_id}")
         conn = self.db_manager.get_connection()
@@ -1990,10 +2052,10 @@ class EmployeeTimeApp:
         employee = cursor.fetchone()
         print(f"Database query result: {employee}")
         conn.close()
-    
+
         if not employee:
             print(f"ERROR: Employee with database ID {database_id} not found in database")
-            
+
             # Additional debugging - let's see what database IDs actually exist
             conn = self.db_manager.get_connection()
             cursor = conn.cursor()
@@ -2003,10 +2065,10 @@ class EmployeeTimeApp:
             for emp in all_employees:
                 print(f"  DB_ID: {emp[0]}, Employee_ID: '{emp[1]}', Name: {emp[2]}")
             conn.close()
-            
+
             messagebox.showerror("Error", "Selected employee not found in database")
             return
-        
+
         print(f"Employee data retrieved successfully:")
         print(f"  Database ID: {employee[0]}")
         print(f"  Name: {employee[1]}")
@@ -2020,7 +2082,7 @@ class EmployeeTimeApp:
         print(f"  Sick Days: {employee[9] if len(employee) > 9 else 'N/A'}")
         print(f"  Active: {employee[10] if len(employee) > 10 else 'N/A'}")
         print(f"  Full employee record length: {len(employee)}")
-    
+
         # Create dialog window
         print("Creating dialog window...")
         dialog = tk.Toplevel(self.root)
@@ -2030,140 +2092,140 @@ class EmployeeTimeApp:
         dialog.transient(self.root)
         dialog.grab_set()
         print("Dialog window created successfully")
-    
+
         # Create individual variables for each field
         print("Creating form variables...")
         try:
             name_var = tk.StringVar(value=employee[1])
             print(f"  Name variable set to: '{employee[1]}'")
-            
+
             position_var = tk.StringVar(value=employee[3] or "")
             print(f"  Position variable set to: '{employee[3] or ''}'")
-            
+
             hourly_rate_var = tk.DoubleVar(value=employee[4] or 0.0)
             print(f"  Hourly rate variable set to: {employee[4] or 0.0}")
-            
+
             email_var = tk.StringVar(value=employee[5] or "")
             print(f"  Email variable set to: '{employee[5] or ''}'")
-            
+
             hours_per_week_var = tk.DoubleVar(value=employee[7] if len(employee) > 7 else 40.0)
             hours_per_week_value = employee[7] if len(employee) > 7 else 40.0
             print(f"  Hours/week variable set to: {hours_per_week_value}")
-            
+
             vacation_days_var = tk.IntVar(value=employee[8] if len(employee) > 8 else 20)
             vacation_days_value = employee[8] if len(employee) > 8 else 20
             print(f"  Vacation days variable set to: {vacation_days_value}")
-            
+
             sick_days_var = tk.IntVar(value=employee[9] if len(employee) > 9 else 10)
             sick_days_value = employee[9] if len(employee) > 9 else 10
             print(f"  Sick days variable set to: {sick_days_value}")
-            
+
             print("All form variables created successfully")
         except Exception as e:
             print(f"ERROR creating form variables: {e}")
             messagebox.showerror("Error", f"Failed to initialize form: {e}")
             dialog.destroy()
             return
-    
+
         # Create form fields with grid layout
         print("Creating form fields...")
         row = 0
-        
+
         try:
             # Name field
             print(f"  Creating name field at row {row}")
             ttk.Label(dialog, text="Name:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Entry(dialog, textvariable=name_var, width=30).grid(row=row, column=1, padx=10, pady=5)
             row += 1
-    
+
             # Employee ID field (read-only) - show the actual employee_id, not database id
             print(f"  Creating employee ID field at row {row}")
             ttk.Label(dialog, text="Employee ID:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Label(dialog, text=employee[2], foreground='blue').grid(row=row, column=1, sticky='w', padx=10, pady=5)
             row += 1
-    
+
             # Position field
             print(f"  Creating position field at row {row}")
             ttk.Label(dialog, text="Position:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Entry(dialog, textvariable=position_var, width=30).grid(row=row, column=1, padx=10, pady=5)
             row += 1
-    
+
             # Hourly Rate field
             print(f"  Creating hourly rate field at row {row}")
             ttk.Label(dialog, text="Hourly Rate:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Entry(dialog, textvariable=hourly_rate_var, width=30).grid(row=row, column=1, padx=10, pady=5)
             row += 1
-    
+
             # Email field
             print(f"  Creating email field at row {row}")
             ttk.Label(dialog, text="Email:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Entry(dialog, textvariable=email_var, width=30).grid(row=row, column=1, padx=10, pady=5)
             row += 1
-    
+
             # Hours/Week field
             print(f"  Creating hours/week field at row {row}")
             ttk.Label(dialog, text="Hours/Week:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Entry(dialog, textvariable=hours_per_week_var, width=30).grid(row=row, column=1, padx=10, pady=5)
             row += 1
-    
+
             # Vacation Days field
             print(f"  Creating vacation days field at row {row}")
             ttk.Label(dialog, text="Vacation Days:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Entry(dialog, textvariable=vacation_days_var, width=30).grid(row=row, column=1, padx=10, pady=5)
             row += 1
-    
+
             # Sick Days field
             print(f"  Creating sick days field at row {row}")
             ttk.Label(dialog, text="Sick Days:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Entry(dialog, textvariable=sick_days_var, width=30).grid(row=row, column=1, padx=10, pady=5)
             row += 1
-            
+
             print("All form fields created successfully")
-            
+
         except Exception as e:
             print(f"ERROR creating form fields: {e}")
             messagebox.showerror("Error", f"Failed to create form fields: {e}")
             dialog.destroy()
             return
-    
+
         def save_changes():
             print("\n=== SAVE CHANGES FUNCTION CALLED ===")
-            
+
             # Validate required fields
             name_value = name_var.get().strip()
             print(f"Name field value: '{name_value}'")
-            
+
             if not name_value:
                 print("ERROR: Name field is empty")
                 messagebox.showerror("Error", "Name is required!")
                 return
-    
+
             # Get all form values
             print("Getting form values...")
             try:
                 position_value = position_var.get().strip()
                 print(f"Position: '{position_value}'")
-                
+
                 hourly_rate_value = hourly_rate_var.get()
                 print(f"Hourly rate: {hourly_rate_value}")
-                
+
                 email_value = email_var.get().strip()
                 print(f"Email: '{email_value}'")
-                
+
                 hours_per_week_value = hours_per_week_var.get()
                 print(f"Hours per week: {hours_per_week_value}")
-                
+
                 vacation_days_value = vacation_days_var.get()
                 print(f"Vacation days: {vacation_days_value}")
-                
+
                 sick_days_value = sick_days_var.get()
                 print(f"Sick days: {sick_days_value}")
-                
+
             except Exception as e:
                 print(f"ERROR getting form values: {e}")
                 messagebox.showerror("Error", f"Invalid form values: {e}")
                 return
-    
+
             # Validate numeric fields
             print("Validating numeric fields...")
             try:
@@ -2176,7 +2238,7 @@ class EmployeeTimeApp:
                 print(f"ERROR: Invalid numeric values - {e}")
                 messagebox.showerror("Error", "Please enter valid numeric values!")
                 return
-    
+
             # Prepare update data
             update_data = {
                 'name': name_value,
@@ -2188,13 +2250,13 @@ class EmployeeTimeApp:
                 'sick_days_per_year': sick_days
             }
             print(f"Update data prepared: {update_data}")
-    
+
             # Update employee in database using the database ID
             print(f"Updating employee in database with database ID: {database_id}")
             try:
                 success = self.employee_manager.update_employee(database_id, **update_data)
                 print(f"Update result: {success}")
-                
+
                 if success:
                     print("Update successful - refreshing UI")
                     self.refresh_employee_list()
@@ -2210,18 +2272,18 @@ class EmployeeTimeApp:
                 import traceback
                 traceback.print_exc()
                 messagebox.showerror("Error", f"Database error: {str(e)}")
-    
+
         # Button frame
         print("Creating button frame...")
         btn_frame = ttk.Frame(dialog)
         btn_frame.grid(row=row, column=0, columnspan=2, pady=20)
-    
+
         ttk.Button(btn_frame, text="Save Changes", command=save_changes).pack(side=tk.LEFT, padx=10)
         ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=10)
-    
+
         # Set focus on the name field
         dialog.after(100, lambda: name_var.get() and dialog.focus_set())
-        
+
         print("=== EDIT EMPLOYEE DIALOG SETUP COMPLETED ===\n")
 
     def deactivate_employee(self):
@@ -2441,25 +2503,54 @@ class EmployeeTimeApp:
 
     def load_employee_details(self, event=None):
         """Load details for the selected employee"""
+        print("=== LOAD EMPLOYEE DETAILS STARTED ===")
+
         selected = self.details_emp_var.get()
+        print(f"Selected from details combobox: '{selected}'")
+
         if not selected:
+            print("No employee selected in details combobox")
             return
 
-        # Extract employee ID from selection
-        emp_id = selected.split('(')[1].split(')')[0]
+        # Extract employee info from combobox selection (format: "Name (employee_id)")
+        # e.g., "Mario Musterjunge (0001)" -> extract "0001"
+        if '(' in selected and ')' in selected:
+            try:
+                # Extract the employee_id part between parentheses
+                employee_id_str = selected.split('(')[1].split(')')[0].strip()
+                print(f"Extracted employee_id: '{employee_id_str}'")
+            except (IndexError, ValueError) as e:
+                print(f"ERROR parsing employee selection '{selected}': {e}")
+                messagebox.showerror("Error", f"Invalid employee selection format: {selected}")
+                return
+        else:
+            print(f"ERROR: Invalid selection format '{selected}'")
+            messagebox.showerror("Error", f"Invalid employee selection format: {selected}")
+            return
 
-        # Find employee in database
+        # Find employee in database using employee_id
+        print(f"Looking up employee with employee_id: '{employee_id_str}'")
         employees = self.employee_manager.get_all_employees(include_inactive=True)
         employee = None
+
         for emp in employees:
-            if emp[2] == emp_id:  # emp[2] is employee_id
+            print(f"  Checking employee: DB_ID={emp[0]}, employee_id='{emp[2]}', name='{emp[1]}'")
+            if emp[2] == employee_id_str:  # emp[2] is employee_id
                 employee = emp
+                print(f"  FOUND MATCH: {emp}")
                 break
 
         if not employee:
+            print(f"ERROR: Employee with employee_id '{employee_id_str}' not found")
+            messagebox.showerror("Error", f"Employee {employee_id_str} not found in database")
             return
 
+        print(f"Employee found: {employee}")
+        database_id = employee[0]  # Get the database ID for queries
+        print(f"Using database_id {database_id} for database queries")
+
         # Update personal info
+        print("Updating personal info display...")
         self.personal_info_values['Name'].config(text=employee[1])
         self.personal_info_values['Employee ID'].config(text=employee[2])
         self.personal_info_values['Position'].config(text=employee[3] if employee[3] else "N/A")
@@ -2472,34 +2563,42 @@ class EmployeeTimeApp:
         )
 
         # Update work info
+        print("Updating work info display...")
         self.work_info_values['Hours/Week'].config(text=f"{employee[7]:.1f}" if employee[7] else "N/A")
         self.work_info_values['Vacation Days/Year'].config(text=str(employee[8]) if employee[8] else "N/A")
         self.work_info_values['Sick Days/Year'].config(text=str(employee[9]) if employee[9] else "N/A")
 
         # Calculate and display remaining days
+        print("Calculating vacation/sick days...")
         current_year = datetime.now().year
         start_of_year = date(current_year, 1, 1)
 
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
 
-        # Get vacation days used this year
+        # Get vacation days used this year - FIXED: use database_id (employee[0])
+        print(f"Querying vacation days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
             WHERE employee_id = ? AND date >= ? AND record_type = 'vacation'
-        ''', (employee[0], start_of_year))
+        ''', (database_id, start_of_year))
         vacation_used = cursor.fetchone()[0]
+        print(f"Vacation days used: {vacation_used}")
 
-        # Get sick days used this year
+        # Get sick days used this year - FIXED: use database_id (employee[0])
+        print(f"Querying sick days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
             WHERE employee_id = ? AND date >= ? AND record_type = 'sick'
-        ''', (employee[0], start_of_year))
+        ''', (database_id, start_of_year))
         sick_used = cursor.fetchone()[0]
+        print(f"Sick days used: {sick_used}")
         conn.close()
 
         vacation_remaining = max(0, (employee[8] if employee[8] else 20) - vacation_used)
         sick_remaining = max(0, (employee[9] if employee[9] else 10) - sick_used)
+
+        print(f"Vacation remaining: {vacation_remaining}, Sick remaining: {sick_remaining}")
 
         self.work_info_values['Vacation Days Remaining'].config(
             text=f"{vacation_remaining} (of {employee[8] if employee[8] else 20})",
@@ -2510,10 +2609,14 @@ class EmployeeTimeApp:
             foreground="green" if sick_remaining > 0 else "red"
         )
 
-        # Update statistics
+        # Update statistics - FIXED: use database_id (employee[0])
+        print("Calculating statistics...")
         current_month = datetime.now().month
-        monthly_summary = self.time_tracker.calculate_monthly_summary(employee[0], current_year, current_month)
-        yearly_summary = self.time_tracker.calculate_yearly_summary(employee[0], current_year)
+        monthly_summary = self.time_tracker.calculate_monthly_summary(database_id, current_year, current_month)
+        yearly_summary = self.time_tracker.calculate_yearly_summary(database_id, current_year)
+
+        print(f"Monthly summary: {monthly_summary}")
+        print(f"Yearly summary: {yearly_summary}")
 
         self.stats_values['Work Hours'].config(text=f"{monthly_summary['total_work_hours']:.1f}")
         self.stats_values['Overtime'].config(text=f"{monthly_summary['total_overtime']:.1f}")
@@ -2521,6 +2624,8 @@ class EmployeeTimeApp:
         self.stats_values['Sick Days'].config(text=str(monthly_summary['sick_days']))
         self.stats_values['YTD Work Hours'].config(text=f"{yearly_summary['total_work_hours']:.1f}")
         self.stats_values['YTD Overtime'].config(text=f"{yearly_summary['total_overtime']:.1f}")
+
+        print("=== LOAD EMPLOYEE DETAILS COMPLETED ===\n")
 
 # =============================================================================
 # MAIN APPLICATION ENTRY POINT                                                  #TODO:  later edit
