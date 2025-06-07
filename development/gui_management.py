@@ -404,55 +404,56 @@ class EmployeeTimeApp:
         self.preview_text.config(state=tk.DISABLED)
 
     def add_time_entry(self):
-        """Add time entry for selected employee"""
+        """Add time entry for selected employee - Reference implementation"""
         if not self.selected_employee:
             messagebox.showwarning("Warning", "Please select an employee first.")
             return
 
         try:
             # Get date components from form fields
-            print("Selecting the date:") #TODO: remove
+            print("Selecting the date:")
             day = self.day_var.get()
             month = self.date_month_var.get()
             year = self.date_year_var.get()
             # Create date string in YYYY-MM-DD format
             entry_date = f"{year:04d}-{month:02d}-{day:02d}"
-            
+
             self.start_times = [var.get().strip() for var in self.start_time_vars if var.get().strip()]
             self.end_times = [var.get().strip() for var in self.end_time_vars if var.get().strip()]
-            self.clear_time_form()
 
-            print(f"day:\t\t{day}") #TODO: remove
-            print(f"month:\t\t{month}") #TODO: remove
-            print(f"year:\t\t{year}") #TODO: remove
-            print(f"entry_date:\t{entry_date}") #TODO: remove
+            print(f"day:\t\t{day}")
+            print(f"month:\t\t{month}")
+            print(f"year:\t\t{year}")
+            print(f"entry_date:\t{entry_date}")
+
             # Get time entry data
             hours = self.hours_var.get()
             record_type = self.type_var.get()
             notes = self.notes_var.get()
 
-            print(f"hours\t\t{hours}") #TODO: remove
-            print(f"record_type\t\t{record_type}") #TODO: remove
-            print(f"notes\t\t{notes}") #TODO: remove
+            print(f"hours\t\t{hours}")
+            print(f"record_type\t\t{record_type}")
+            print(f"notes\t\t{notes}")
 
+            # Use the database ID (self.selected_employee) directly
             success, message = self.time_tracker.add_time_record(
-                employee_id = self.selected_employee, 
-                record_date = entry_date, 
+                employee_id=self.selected_employee,  # This is the database ID
+                record_date=entry_date, 
                 start_times=self.start_times, 
                 end_times=self.end_times,
                 record_type=record_type, 
                 notes=notes
-                )
+            )
 
             if success:
                 messagebox.showinfo("Success", message)
                 self.load_time_records_data() 
                 self.hours_var.set(0.0)
                 self.notes_var.set("")
-                self.sort_out_time_entries()
+                self.clear_time_form()
             else:
-                print("Error!") #TODO: remove
-                print(message) #TODO: remove
+                print("Error!")
+                print(message)
                 messagebox.showerror("Error", message)
 
         except ValueError as e:
@@ -517,16 +518,28 @@ class EmployeeTimeApp:
         self.preview_time_calculation()
 
     def get_selected_employee_id(self):
-        """Get the ID of the currently selected employee"""
+        """Get the ID of the currently selected employee - Fixed version"""
         if not self.emp_var.get():
             return None
 
-        # Extract employee ID from the combo selection (assuming format "Name (ID: xxx)")
+        # Extract employee ID from the combo selection (format: "Name (ID)")
         emp_text = self.emp_var.get()
-        if "(ID:" in emp_text:
+        if '(' in emp_text and ')' in emp_text:
             try:
-                emp_id = int(emp_text.split("(ID:")[1].split(")")[0].strip())
-                return emp_id
+                emp_id_str = emp_text.split('(')[1].split(')')[0].strip()
+
+                # Look up the database ID
+                conn = self.db_manager.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM employees WHERE employee_id = ?", (emp_id_str,))
+                result = cursor.fetchone()
+                conn.close()
+
+                if result:
+                    return result[0]  # Return database ID
+                else:
+                    return None
+
             except (IndexError, ValueError):
                 return None
         return None
@@ -1340,50 +1353,6 @@ class EmployeeTimeApp:
             print(f"Error in _get_selected_employee_db_id: {str(e)}")
             return None
 
-    # def load_time_records(self, employee_id=None, month=None, year=None):
-    #     """Load time records for the selected employee and period into the Treeview"""
-    #     # Clear existing records
-    #     self.time_tree.delete(*self.time_tree.get_children())
-
-    #     # Use current selection if no parameters provided
-    #     employee_id = employee_id or self.selected_employee
-    #     month = month or self.month_var.get()
-    #     year = year or self.year_var.get()
-
-    #     if not employee_id:
-    #         return
-
-    #     try:
-    #         conn = self.db_manager.get_connection()
-    #         cursor = conn.cursor()
-
-    #         # Get records for the selected month/year
-    #         cursor.execute('''
-    #             SELECT date, hours_worked, overtime_hours, record_type, notes 
-    #             FROM time_records 
-    #             WHERE employee_id = ? 
-    #             AND strftime('%m', date) = ? 
-    #             AND strftime('%Y', date) = ?
-    #             ORDER BY date
-    #         ''', (employee_id, f"{month:02d}", str(year)))
-
-    #         records = cursor.fetchall()
-
-    #         # Insert records into the Treeview
-    #         for record in records:
-    #             self.time_tree.insert('', 'end', values=(
-    #                 record[0],  # Date
-    #                 f"{record[1]:.2f}",  # Hours worked
-    #                 f"{record[2]:.2f}" if record[2] else "0.00",  # Overtime
-    #                 record[3].capitalize(),  # Type
-    #                 record[4]  # Notes
-    #             ))
-
-    #     except Exception as e:
-    #         messagebox.showerror("Database Error", f"Could not load time records: {str(e)}")
-    #     finally:
-    #         conn.close()
-
     def sort_out_time_entries(self):
         """Check all entries for current employee/month and consolidate duplicates"""
         if not self.selected_employee:
@@ -1560,29 +1529,27 @@ class EmployeeTimeApp:
             self.output_path_var.set(dir_path)
 
     def load_time_records_data(self):
-        """Load time records data from database and populate the treeview"""
+        """Load time records data from database and populate the treeview - Fixed version"""
         print("=== load_time_records_data STARTED ===")
 
-        # Check if emp_var exists and has a value
-        if not hasattr(self, 'emp_var'):
-            print("ERROR: emp_var attribute does not exist!")
-            return
-
-        emp_display_name = self.emp_var.get()
-        print(f"Employee selected (raw): '{emp_display_name}'")
-
-        if not emp_display_name:
+        # Check if we have a selected employee
+        if not self.selected_employee:
             print("ERROR: No employee selected!")
             return
 
-        # Extract just the name part before the parentheses
-        # e.g., "Max Musterman (0001)" -> "Max Musterman"
-        if '(' in emp_display_name:
-            emp_name = emp_display_name.split('(')[0].strip()
-        else:
-            emp_name = emp_display_name.strip()
-        
-        print(f"Employee name extracted: '{emp_name}'")
+        # Get employee name for display
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM employees WHERE id = ?", (self.selected_employee,))
+        emp_result = cursor.fetchone()
+
+        if not emp_result:
+            print(f"ERROR: Employee with ID {self.selected_employee} not found!")
+            conn.close()
+            return
+
+        emp_name = emp_result[0]
+        print(f"Loading records for employee: {emp_name} (ID: {self.selected_employee})")
 
         # Clear existing data
         current_items = self.time_tree.get_children()
@@ -1591,25 +1558,11 @@ class EmployeeTimeApp:
             self.time_tree.delete(item)
 
         try:
-            conn = self.db_manager.get_connection()
-            cursor = conn.cursor()
-
-            # Get employee ID
-            print(f"Looking up employee ID for: {emp_name}")
-            cursor.execute("SELECT id FROM employees WHERE name = ?", (emp_name,))
-            emp_result = cursor.fetchone()
-            if not emp_result:
-                print(f"ERROR: Employee '{emp_name}' not found in database!")
-                return
-
-            employee_id = emp_result[0]
-            print(f"Found employee ID: {employee_id}")
-
             # Check date manager values
             print(f"Date manager - Year: {self.date_manager.view_year}, Month: {self.date_manager.view_month}")
 
-            # Get time records for the selected month/year
-            query_params = (employee_id, str(self.date_manager.view_year), f"{self.date_manager.view_month:02d}")
+            # Get time records for the selected month/year using the database ID
+            query_params = (self.selected_employee, str(self.date_manager.view_year), f"{self.date_manager.view_month:02d}")
             print(f"Query parameters: {query_params}")
 
             cursor.execute("""
@@ -1690,14 +1643,15 @@ class EmployeeTimeApp:
                 self.time_tree.insert('', 'end', values=values_to_insert)
 
             print(f"Successfully inserted {len(records)} records into treeview")
-            conn.close()
 
         except Exception as e:
             print(f"ERROR in load_time_records_data: {e}")
             import traceback
             traceback.print_exc()
             if hasattr(self, 'messagebox'):
-                self.messagebox.showerror("Error", f"Failed to load time records: {str(e)}")
+                messagebox.showerror("Error", f"Failed to load time records: {str(e)}")
+        finally:
+            conn.close()
 
         print("=== load_time_records_data FINISHED ===")
     
@@ -1817,22 +1771,39 @@ class EmployeeTimeApp:
   # =============================================================================
   # EMPLOYEE MANAGEMENT METHODS
   # =============================================================================
-
     def refresh_employee_list(self):
-        """Refresh the employee list display"""
+        """Refresh the employee list display - with formatted DB_ID"""
+        print("=== REFRESHING EMPLOYEE LIST ===")
+
         # Clear existing items
         for item in self.emp_tree.get_children():
             self.emp_tree.delete(item)
-        
+
         # Get employees
         include_inactive = self.show_inactive_var.get()
-        employees = self.employee_manager.get_all_employees(include_inactive=self.show_inactive_var) #TODO: Maybe create a new variable for this
-        
-        for emp in employees:
+        employees = self.employee_manager.get_all_employees(include_inactive=include_inactive)
+        print(f"Retrieved {len(employees)} employees from database")
+
+        for i, emp in enumerate(employees):
             try:
-                status = "Active" if emp[10] else "Inactive"  # emp[10] is active column
-                self.emp_tree.insert('', 'end', values=(
-                    emp[2],    # employee_id
+                print(f"Processing employee {i+1}:")
+                print(f"  Database ID (emp[0]): {emp[0]}")
+                print(f"  Name (emp[1]): {emp[1]}")
+                print(f"  Employee ID (emp[2]): {emp[2]}")
+                print(f"  Position (emp[3]): {emp[3]}")
+                print(f"  Hourly Rate (emp[4]): {emp[4]}")
+                print(f"  Email (emp[5]): {emp[5]}")
+                print(f"  Hours/Week (emp[7]): {emp[7] if len(emp) > 7 else 'N/A'}")
+                print(f"  Vacation Days (emp[8]): {emp[8] if len(emp) > 8 else 'N/A'}")
+                print(f"  Active (emp[10]): {emp[10] if len(emp) > 10 else 'N/A'}")
+
+                status = "Active" if emp[10] else "Inactive"
+
+                # FORMAT the database ID as "DB_ID: {number}"
+                formatted_db_id = f"DB_ID: {emp[0]}"
+
+                values_to_insert = (
+                    formatted_db_id,    # "DB_ID: 1", "DB_ID: 2", etc.
                     emp[1],    # name
                     emp[3] or "",    # position
                     f"${emp[4]:.2f}" if emp[4] else "$0.00",  # hourly_rate
@@ -1840,11 +1811,18 @@ class EmployeeTimeApp:
                     emp[8] if emp[8] else "20",    # vacation_days_per_year
                     emp[5] or "",     # email
                     status
-                ))
-            except (IndexError, TypeError):
-                # Handle any database format issues
+                )
+
+                print(f"  Inserting into TreeView: {values_to_insert}")
+                self.emp_tree.insert('', 'end', values=values_to_insert)
+
+            except (IndexError, TypeError) as e:
+                print(f"ERROR processing employee {i+1}: {e}")
+                print(f"Employee data: {emp}")
                 continue
-    
+            
+        print("=== EMPLOYEE LIST REFRESH COMPLETED ===\n")
+
     def update_employee_combo(self):
         """Update employee combobox with current employees"""
         employees = self.employee_manager.get_all_employees()
@@ -1966,89 +1944,286 @@ class EmployeeTimeApp:
         id_entry.configure(validate='key', validatecommand=vcmd)
 
     def edit_employee_dialog(self):
-        """Show dialog to edit existing employee with proper saving"""
+        """Show dialog to edit existing employee - with DB_ID parsing"""
+        print("=== EDIT EMPLOYEE DIALOG STARTED ===")
+        
         selection = self.emp_tree.selection()
+        print(f"TreeView selection: {selection}")
+        
         if not selection:
+            print("ERROR: No employee selected in TreeView")
             messagebox.showwarning("Warning", "Please select an employee to edit.")
             return
-
+    
         item = self.emp_tree.item(selection[0])
-        displayed_id = item['values'][0]  # Get displayed employee ID
-
-        # Get full employee data from database
+        print(f"Selected item data: {item}")
+        print(f"Item values: {item['values']}")
+        
+        if not item['values'] or len(item['values']) == 0:
+            print("ERROR: No values in selected item")
+            messagebox.showerror("Error", "Invalid selection - no data found")
+            return
+        
+        # EXTRACT database ID from formatted string "DB_ID: 1" -> 1
+        formatted_db_id = item['values'][0]  # e.g., "DB_ID: 1"
+        print(f"Formatted DB ID from TreeView: '{formatted_db_id}'")
+        
+        try:
+            # Parse "DB_ID: 1" to extract just the number "1"
+            if formatted_db_id.startswith("DB_ID: "):
+                database_id = int(formatted_db_id.replace("DB_ID: ", ""))
+                print(f"Extracted database_id: {database_id}")
+            else:
+                # Fallback: try to convert directly (in case format changes)
+                database_id = int(formatted_db_id)
+                print(f"Direct conversion database_id: {database_id}")
+        except ValueError as e:
+            print(f"ERROR parsing database ID from '{formatted_db_id}': {e}")
+            messagebox.showerror("Error", f"Invalid database ID format: {formatted_db_id}")
+            return
+    
+        # Get full employee data from database using database ID
+        print(f"Looking up employee in database with database ID: {database_id}")
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM employees WHERE employee_id = ?", (displayed_id,))
+        cursor.execute("SELECT * FROM employees WHERE id = ?", (database_id,))
         employee = cursor.fetchone()
+        print(f"Database query result: {employee}")
         conn.close()
-
+    
         if not employee:
+            print(f"ERROR: Employee with database ID {database_id} not found in database")
+            
+            # Additional debugging - let's see what database IDs actually exist
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, employee_id, name FROM employees")
+            all_employees = cursor.fetchall()
+            print("All employees in database:")
+            for emp in all_employees:
+                print(f"  DB_ID: {emp[0]}, Employee_ID: '{emp[1]}', Name: {emp[2]}")
+            conn.close()
+            
             messagebox.showerror("Error", "Selected employee not found in database")
             return
-
+        
+        print(f"Employee data retrieved successfully:")
+        print(f"  Database ID: {employee[0]}")
+        print(f"  Name: {employee[1]}")
+        print(f"  Employee ID: {employee[2]}")
+        print(f"  Position: {employee[3]}")
+        print(f"  Hourly Rate: {employee[4]}")
+        print(f"  Email: {employee[5]}")
+        print(f"  Hire Date: {employee[6]}")
+        print(f"  Hours/Week: {employee[7] if len(employee) > 7 else 'N/A'}")
+        print(f"  Vacation Days: {employee[8] if len(employee) > 8 else 'N/A'}")
+        print(f"  Sick Days: {employee[9] if len(employee) > 9 else 'N/A'}")
+        print(f"  Active: {employee[10] if len(employee) > 10 else 'N/A'}")
+        print(f"  Full employee record length: {len(employee)}")
+    
         # Create dialog window
+        print("Creating dialog window...")
         dialog = tk.Toplevel(self.root)
-        dialog.title(f"Edit Employee {displayed_id}")
-        dialog.geometry("400x450")  # Slightly taller for better spacing
+        # Show both database ID and employee_id in title for clarity
+        dialog.title(f"Edit Employee {employee[2]} (DB ID: {database_id})")
+        dialog.geometry("400x450")
         dialog.transient(self.root)
         dialog.grab_set()
-
-        # Form fields with current values - using grid for better layout
-        fields = [
-            ("Name:", tk.StringVar(value=employee[1])),
-            ("Employee ID:", None, displayed_id),  # Display only
-            ("Position:", tk.StringVar(value=employee[3] or "")),
-            ("Hourly Rate:", tk.DoubleVar(value=employee[4] or 0.0)),
-            ("Email:", tk.StringVar(value=employee[5] or "")),
-            ("Hours/Week:", tk.DoubleVar(value=employee[7] if len(employee) > 7 else 40.0)),
-            ("Vacation Days:", tk.IntVar(value=employee[8] if len(employee) > 8 else 20)),
-            ("Sick Days:", tk.IntVar(value=employee[9] if len(employee) > 9 else 10)),
-        ]
-
-        for row, (label, var, *display) in enumerate(fields):
-            ttk.Label(dialog, text=label).grid(row=row, column=0, sticky='w', padx=10, pady=5)
-            if var is not None:
-                ttk.Entry(dialog, textvariable=var, width=30).grid(row=row, column=1, padx=10, pady=5)
-            else:
-                ttk.Label(dialog, text=display[0], foreground='blue').grid(row=row, column=1, sticky='w', padx=10, pady=5)
-
+        print("Dialog window created successfully")
+    
+        # Create individual variables for each field
+        print("Creating form variables...")
+        try:
+            name_var = tk.StringVar(value=employee[1])
+            print(f"  Name variable set to: '{employee[1]}'")
+            
+            position_var = tk.StringVar(value=employee[3] or "")
+            print(f"  Position variable set to: '{employee[3] or ''}'")
+            
+            hourly_rate_var = tk.DoubleVar(value=employee[4] or 0.0)
+            print(f"  Hourly rate variable set to: {employee[4] or 0.0}")
+            
+            email_var = tk.StringVar(value=employee[5] or "")
+            print(f"  Email variable set to: '{employee[5] or ''}'")
+            
+            hours_per_week_var = tk.DoubleVar(value=employee[7] if len(employee) > 7 else 40.0)
+            hours_per_week_value = employee[7] if len(employee) > 7 else 40.0
+            print(f"  Hours/week variable set to: {hours_per_week_value}")
+            
+            vacation_days_var = tk.IntVar(value=employee[8] if len(employee) > 8 else 20)
+            vacation_days_value = employee[8] if len(employee) > 8 else 20
+            print(f"  Vacation days variable set to: {vacation_days_value}")
+            
+            sick_days_var = tk.IntVar(value=employee[9] if len(employee) > 9 else 10)
+            sick_days_value = employee[9] if len(employee) > 9 else 10
+            print(f"  Sick days variable set to: {sick_days_value}")
+            
+            print("All form variables created successfully")
+        except Exception as e:
+            print(f"ERROR creating form variables: {e}")
+            messagebox.showerror("Error", f"Failed to initialize form: {e}")
+            dialog.destroy()
+            return
+    
+        # Create form fields with grid layout
+        print("Creating form fields...")
+        row = 0
+        
+        try:
+            # Name field
+            print(f"  Creating name field at row {row}")
+            ttk.Label(dialog, text="Name:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            ttk.Entry(dialog, textvariable=name_var, width=30).grid(row=row, column=1, padx=10, pady=5)
+            row += 1
+    
+            # Employee ID field (read-only) - show the actual employee_id, not database id
+            print(f"  Creating employee ID field at row {row}")
+            ttk.Label(dialog, text="Employee ID:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            ttk.Label(dialog, text=employee[2], foreground='blue').grid(row=row, column=1, sticky='w', padx=10, pady=5)
+            row += 1
+    
+            # Position field
+            print(f"  Creating position field at row {row}")
+            ttk.Label(dialog, text="Position:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            ttk.Entry(dialog, textvariable=position_var, width=30).grid(row=row, column=1, padx=10, pady=5)
+            row += 1
+    
+            # Hourly Rate field
+            print(f"  Creating hourly rate field at row {row}")
+            ttk.Label(dialog, text="Hourly Rate:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            ttk.Entry(dialog, textvariable=hourly_rate_var, width=30).grid(row=row, column=1, padx=10, pady=5)
+            row += 1
+    
+            # Email field
+            print(f"  Creating email field at row {row}")
+            ttk.Label(dialog, text="Email:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            ttk.Entry(dialog, textvariable=email_var, width=30).grid(row=row, column=1, padx=10, pady=5)
+            row += 1
+    
+            # Hours/Week field
+            print(f"  Creating hours/week field at row {row}")
+            ttk.Label(dialog, text="Hours/Week:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            ttk.Entry(dialog, textvariable=hours_per_week_var, width=30).grid(row=row, column=1, padx=10, pady=5)
+            row += 1
+    
+            # Vacation Days field
+            print(f"  Creating vacation days field at row {row}")
+            ttk.Label(dialog, text="Vacation Days:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            ttk.Entry(dialog, textvariable=vacation_days_var, width=30).grid(row=row, column=1, padx=10, pady=5)
+            row += 1
+    
+            # Sick Days field
+            print(f"  Creating sick days field at row {row}")
+            ttk.Label(dialog, text="Sick Days:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
+            ttk.Entry(dialog, textvariable=sick_days_var, width=30).grid(row=row, column=1, padx=10, pady=5)
+            row += 1
+            
+            print("All form fields created successfully")
+            
+        except Exception as e:
+            print(f"ERROR creating form fields: {e}")
+            messagebox.showerror("Error", f"Failed to create form fields: {e}")
+            dialog.destroy()
+            return
+    
         def save_changes():
+            print("\n=== SAVE CHANGES FUNCTION CALLED ===")
+            
             # Validate required fields
-            if not fields[0][1].get().strip():  # Name field
+            name_value = name_var.get().strip()
+            print(f"Name field value: '{name_value}'")
+            
+            if not name_value:
+                print("ERROR: Name field is empty")
                 messagebox.showerror("Error", "Name is required!")
                 return
-
+    
+            # Get all form values
+            print("Getting form values...")
+            try:
+                position_value = position_var.get().strip()
+                print(f"Position: '{position_value}'")
+                
+                hourly_rate_value = hourly_rate_var.get()
+                print(f"Hourly rate: {hourly_rate_value}")
+                
+                email_value = email_var.get().strip()
+                print(f"Email: '{email_value}'")
+                
+                hours_per_week_value = hours_per_week_var.get()
+                print(f"Hours per week: {hours_per_week_value}")
+                
+                vacation_days_value = vacation_days_var.get()
+                print(f"Vacation days: {vacation_days_value}")
+                
+                sick_days_value = sick_days_var.get()
+                print(f"Sick days: {sick_days_value}")
+                
+            except Exception as e:
+                print(f"ERROR getting form values: {e}")
+                messagebox.showerror("Error", f"Invalid form values: {e}")
+                return
+    
+            # Validate numeric fields
+            print("Validating numeric fields...")
+            try:
+                hourly_rate = float(hourly_rate_value)
+                hours_per_week = float(hours_per_week_value)
+                vacation_days = int(vacation_days_value)
+                sick_days = int(sick_days_value)
+                print(f"Validated values: rate={hourly_rate}, hours={hours_per_week}, vacation={vacation_days}, sick={sick_days}")
+            except ValueError as e:
+                print(f"ERROR: Invalid numeric values - {e}")
+                messagebox.showerror("Error", "Please enter valid numeric values!")
+                return
+    
             # Prepare update data
             update_data = {
-                'name': fields[0][1].get().strip(),
-                'position': fields[2][1].get().strip(),
-                'hourly_rate': float(fields[3][1].get()),
-                'email': fields[4][1].get().strip(),
-                'hours_per_week': float(fields[5][1].get()),
-                'vacation_days_per_year': int(fields[6][1].get()),
-                'sick_days_per_year': int(fields[7][1].get())
+                'name': name_value,
+                'position': position_value,
+                'hourly_rate': hourly_rate,
+                'email': email_value,
+                'hours_per_week': hours_per_week,
+                'vacation_days_per_year': vacation_days,
+                'sick_days_per_year': sick_days
             }
-
-            # Update employee in database
+            print(f"Update data prepared: {update_data}")
+    
+            # Update employee in database using the database ID
+            print(f"Updating employee in database with database ID: {database_id}")
             try:
-                success = self.employee_manager.update_employee(employee[0], **update_data)
+                success = self.employee_manager.update_employee(database_id, **update_data)
+                print(f"Update result: {success}")
+                
                 if success:
+                    print("Update successful - refreshing UI")
                     self.refresh_employee_list()
                     self.update_employee_combo()
                     dialog.destroy()
-                    messagebox.showinfo("Success", f"Employee {displayed_id} updated successfully!")
+                    messagebox.showinfo("Success", f"Employee {employee[2]} updated successfully!")
+                    print("=== SAVE CHANGES COMPLETED SUCCESSFULLY ===")
                 else:
+                    print("ERROR: Database update failed")
                     messagebox.showerror("Error", "Failed to update employee in database")
             except Exception as e:
+                print(f"ERROR during database update: {e}")
+                import traceback
+                traceback.print_exc()
                 messagebox.showerror("Error", f"Database error: {str(e)}")
-
+    
         # Button frame
+        print("Creating button frame...")
         btn_frame = ttk.Frame(dialog)
-        btn_frame.grid(row=len(fields)+1, column=0, columnspan=2, pady=10)
-
+        btn_frame.grid(row=row, column=0, columnspan=2, pady=20)
+    
         ttk.Button(btn_frame, text="Save Changes", command=save_changes).pack(side=tk.LEFT, padx=10)
         ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=10)
     
+        # Set focus on the name field
+        dialog.after(100, lambda: name_var.get() and dialog.focus_set())
+        
+        print("=== EDIT EMPLOYEE DIALOG SETUP COMPLETED ===\n")
+
     def deactivate_employee(self):
         """Deactivate selected employee"""
         emp_id = self._get_selected_employee_db_id()
@@ -2102,19 +2277,49 @@ class EmployeeTimeApp:
                 messagebox.showerror("Error", message)
 
     def on_employee_select(self, event):
-        """Handle employee selection"""
+        """Handle employee selection - Fixed to properly extract employee info"""
         selected = self.emp_var.get()
-        if selected:
-            # Extract employee ID from selection
-            emp_id = selected.split('(')[1].split(')')[0]
-            # Find employee in database and set selected_employee
-            employees = self.employee_manager.get_all_employees()
-            for emp in employees:
-                if emp[2] == emp_id:  # emp[2] is employee_id
-                    self.selected_employee = emp[0]  # emp[0] is database id
-                    break
-            #self.load_time_records()
-            self.load_time_records_data()  
+        if not selected:
+            self.selected_employee = None
+            self.selected_employee_id = None
+            return
+
+        print(f"Employee selected: '{selected}'")  # Debug print
+
+        # Extract employee ID from selection (format: "Name (ID)")
+        if '(' in selected and ')' in selected:
+            try:
+                # Extract the ID part between parentheses
+                emp_id_str = selected.split('(')[1].split(')')[0].strip()
+                print(f"Extracted employee ID string: '{emp_id_str}'")  # Debug print
+
+                # Get employee database ID by looking up the employee_id in database
+                conn = self.db_manager.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM employees WHERE employee_id = ?", (emp_id_str,))
+                result = cursor.fetchone()
+                conn.close()
+
+                if result:
+                    self.selected_employee = result[0]  # Database ID
+                    self.selected_employee_id = emp_id_str  # Display ID
+                    print(f"Selected employee DB ID: {self.selected_employee}")  # Debug print
+
+                    # Load time records for this employee
+                    self.load_time_records_data()
+                else:
+                    print(f"Employee with ID {emp_id_str} not found in database")
+                    self.selected_employee = None
+                    self.selected_employee_id = None
+
+            except (IndexError, ValueError) as e:
+                print(f"Error parsing employee selection: {e}")
+                self.selected_employee = None
+                self.selected_employee_id = None
+        else:
+            print("Invalid employee selection format")
+            self.selected_employee = None
+            self.selected_employee_id = None
 
     def clear_employee_selection(self):
         """Handle employee selection"""
@@ -2190,24 +2395,6 @@ class EmployeeTimeApp:
         finally:
             if 'conn' in locals():
                 conn.close()
-
-    # def edit_time_entry(self):
-    #     """Edit selected time entry via pop-up window"""
-    #     selected_item = self.time_tree.selection()
-
-    #     if not selected_item:
-    #         messagebox.showwarning("Warning", "Please select a time entry to edit")
-    #         return
-
-    #     try:
-    #         item_values = self.time_tree.item(selected_item[0])['values']
-    #         if not item_values or len(item_values) < 5:
-    #             raise ValueError("Invalid record selected")
-
-    #         self.create_edit_window(item_values)
-
-    #     except Exception as e:
-    #         messagebox.showerror("Error", f"Failed to edit time entry: {str(e)}")
     
     def generate_employee_report(self):
         """Generate report for selected employee"""
