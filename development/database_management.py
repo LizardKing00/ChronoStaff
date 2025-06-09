@@ -8,6 +8,7 @@ import calendar
 import json
 import os
 from calendar_popup import CalendarDialog
+from typing import Dict, List, Tuple
 
 # =============================================================================
 # DATABASE SETUP
@@ -164,6 +165,162 @@ class DatabaseManager:
     
     def get_connection(self):
         return sqlite3.connect(self.db_name)
+
+    def check_schema_for_reports(self) -> Dict[str, any]:
+        """
+        Check if the database has the expected schema for report generation.
+
+        Args:
+            db_path: Path to the SQLite database file
+
+        Returns:
+            Dictionary with schema check results
+        """
+
+        if not os.path.exists(db_path):
+            return {
+                'valid': False,
+                'error': f'Database file not found: {db_path}',
+                'missing_tables': [],
+                'missing_columns': [],
+                'sample_data': {}
+            }
+
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Expected schema
+            expected_tables = {
+                'employees': ['id', 'name', 'employee_id', 'active'],
+                'time_records': ['id', 'employee_id', 'date', 'start_time', 'end_time', 
+                               'hours_worked', 'overtime_hours', 'record_type', 'notes', 'break_minutes'],
+                'settings': ['key', 'value']
+            }
+
+            results = {
+                'valid': True,
+                'error': None,
+                'missing_tables': [],
+                'missing_columns': {},
+                'sample_data': {},
+                'warnings': []
+            }
+
+            # Get all tables
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            existing_tables = [row[0] for row in cursor.fetchall()]
+
+            # Check for missing tables
+            for table_name in expected_tables:
+                if table_name not in existing_tables:
+                    results['missing_tables'].append(table_name)
+                    results['valid'] = False
+
+            # Check columns for existing tables
+            for table_name, expected_columns in expected_tables.items():
+                if table_name in existing_tables:
+                    cursor.execute(f"PRAGMA table_info({table_name})")
+                    existing_columns = [row[1] for row in cursor.fetchall()]
+
+                    missing_cols = []
+                    for col in expected_columns:
+                        if col not in existing_columns:
+                            missing_cols.append(col)
+
+                    if missing_cols:
+                        results['missing_columns'][table_name] = missing_cols
+                        results['valid'] = False
+
+                    # Get sample data
+                    try:
+                        cursor.execute(f"SELECT * FROM {table_name} LIMIT 3")
+                        sample_rows = cursor.fetchall()
+                        results['sample_data'][table_name] = [dict(row) for row in sample_rows]
+                    except Exception as e:
+                        results['warnings'].append(f"Could not fetch sample data from {table_name}: {e}")
+
+            # Additional checks
+            if 'employees' in existing_tables:
+                cursor.execute("SELECT COUNT(*) FROM employees WHERE active = 1")
+                active_count = cursor.fetchone()[0]
+                if active_count == 0:
+                    results['warnings'].append("No active employees found")
+
+            if 'time_records' in existing_tables:
+                cursor.execute("SELECT COUNT(*) FROM time_records")
+                record_count = cursor.fetchone()[0]
+                if record_count == 0:
+                    results['warnings'].append("No time records found")
+
+            conn.close()
+
+            return results
+
+        except Exception as e:
+            return {
+                'valid': False,
+                'error': f'Database error: {e}',
+                'missing_tables': [],
+                'missing_columns': [],
+                'sample_data': {}
+            }
+
+    @classmethod
+    def print_schema_check_results(cls, results: Dict[str, any]):
+        """Print the schema check results in a readable format."""
+
+        print("=" * 60)
+        print("DATABASE SCHEMA CHECK RESULTS")
+        print("=" * 60)
+
+        if results['error']:
+            print(f"❌ ERROR: {results['error']}")
+            return
+
+        if results['valid']:
+            print("✅ Database schema is valid for report generation!")
+        else:
+            print("❌ Database schema has issues that need to be fixed:")
+
+        print()
+
+        # Missing tables
+        if results['missing_tables']:
+            print("🚨 MISSING TABLES:")
+            for table in results['missing_tables']:
+                print(f"   - {table}")
+            print()
+
+        # Missing columns
+        if results['missing_columns']:
+            print("🚨 MISSING COLUMNS:")
+            for table, columns in results['missing_columns'].items():
+                print(f"   Table '{table}':")
+                for col in columns:
+                    print(f"     - {col}")
+            print()
+
+        # Warnings
+        if results['warnings']:
+            print("⚠️  WARNINGS:")
+            for warning in results['warnings']:
+                print(f"   - {warning}")
+            print()
+
+        # Sample data
+        if results['sample_data']:
+            print("📋 SAMPLE DATA:")
+            for table, rows in results['sample_data'].items():
+                print(f"\n   Table '{table}' ({len(rows)} sample rows):")
+                if rows:
+                    for i, row in enumerate(rows):
+                        print(f"     Row {i + 1}: {row}")
+                else:
+                    print("     (No data)")
+
+        print("\n" + "=" * 60)
 
 # =============================================================================
 # EMPLOYEE MANAGEMENT CLASS

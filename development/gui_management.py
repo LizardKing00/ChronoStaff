@@ -9,8 +9,10 @@ import calendar
 import json
 from calendar_popup import CalendarDialog
 from database_management import DatabaseManager, EmployeeManager, TimeTracker, SettingsManager
+from report_generation import ReportManager
 from date_management import DateManager
 import os
+import threading
 import base64
 
 # =============================================================================
@@ -22,6 +24,10 @@ class EmployeeTimeApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Chrono Staff")
+        # Load the image file from disk.
+        icon = tk.PhotoImage(file="/home/zarathustra/repos/ChronoStaff/resources/pictures/main_logo.png") #TODO: edit to make not dependant on the username!
+        # Set it as the window icon.
+        self.root.iconphoto(True, icon)
         self.root.geometry("1200x800")
         self.date_manager = DateManager()
         self.setup_ui_variables()
@@ -33,7 +39,14 @@ class EmployeeTimeApp:
         self.employee_manager = EmployeeManager(self.db_manager)
         self.time_tracker = TimeTracker(self.db_manager)
         self.settings_manager = SettingsManager(self.db_manager)
-
+        try:
+            self.report_manager = ReportManager(self.db_manager.db_name, self.template_path)
+            print("\nReport manager initialized successfully\n")
+        except Exception as e:
+            print(f"\nWarning: Could not initialize report manager: {e}\n")
+            self.report_manager = None
+        
+        self.employees_data = []
         # Current selections
         self.selected_employee = None
         self.selected_employee_id = None
@@ -69,6 +82,9 @@ class EmployeeTimeApp:
         self.day_var.trace('w', self.on_date_component_change)
         self.month_var.trace('w', self.on_date_component_change)
         self.year_var.trace('w', self.on_date_component_change)
+        self.template_path = "/home/zarathustra/repos/ChronoStaff/resources/templates/time_report_1.tex" #TODO: Make this editable via settings
+        self.report_generation_active = False
+        self.last_pdf_path = None
 
   # =============================================================================
   # WINDOWS, TABS ETC...
@@ -553,7 +569,7 @@ class EmployeeTimeApp:
         self.update_date_display()
 
     def create_reports_tab(self):
-        """Create reports tab"""
+        """Create reports tab with functional PDF generation"""
         reports_frame = ttk.Frame(self.notebook)
         self.notebook.add(reports_frame, text="Reports")
         
@@ -577,6 +593,8 @@ class EmployeeTimeApp:
         self.report_emp_combo = ttk.Combobox(row1, textvariable=self.report_emp_var, 
                                             width=30, state="readonly")
         self.report_emp_combo.pack(side=tk.LEFT, padx=(5, 20))
+        # Bind selection event to update available months
+        self.report_emp_combo.bind('<<ComboboxSelected>>', self.on_report_employee_selected)
         
         ttk.Label(row1, text="Report Type:").pack(side=tk.LEFT)
         self.report_type_var = tk.StringVar(value="monthly")
@@ -591,19 +609,35 @@ class EmployeeTimeApp:
         
         ttk.Label(row2, text="Month:").pack(side=tk.LEFT)
         self.report_month_var = tk.IntVar(value=datetime.now().month)
-        tk.Spinbox(row2, from_=1, to=12, textvariable=self.report_month_var, width=5).pack(side=tk.LEFT, padx=(5, 10))
+        self.month_spinbox = tk.Spinbox(row2, from_=1, to=12, textvariable=self.report_month_var, width=5)
+        self.month_spinbox.pack(side=tk.LEFT, padx=(5, 10))
         
         ttk.Label(row2, text="Year:").pack(side=tk.LEFT)
         self.report_year_var = tk.IntVar(value=datetime.now().year)
-        tk.Spinbox(row2, from_=2020, to=2030, textvariable=self.report_year_var, width=8).pack(side=tk.LEFT, padx=(5, 20))
+        self.year_spinbox = tk.Spinbox(row2, from_=2020, to=2030, textvariable=self.report_year_var, width=8)
+        self.year_spinbox.pack(side=tk.LEFT, padx=(5, 20))
         
-        # Report buttons
+        # Report buttons (with actual functionality)
         btn_container = ttk.Frame(row2)
         btn_container.pack(side=tk.RIGHT)
         
-        ttk.Button(btn_container, text="Generate Report", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_container, text="Export Report", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_container, text="Clear", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
+        self.generate_btn = ttk.Button(btn_container, text="Generate Preview", command=self.generate_report_preview)
+        self.generate_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.export_btn = ttk.Button(btn_container, text="Export PDF", command=self.export_pdf_report)
+        self.export_btn.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(btn_container, text="Clear", command=self.clear_report).pack(side=tk.LEFT, padx=5)
+        
+        # Progress bar (new addition)
+        self.progress_frame = ttk.Frame(controls_frame)
+        self.progress_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.progress_label = ttk.Label(self.progress_frame, text="Ready")
+        self.progress_label.pack(side=tk.LEFT)
+        
+        self.progress_bar = ttk.Progressbar(self.progress_frame, mode='indeterminate')
+        self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
         
         # Report display area
         display_frame = ttk.LabelFrame(main_container, text="Report Output")
@@ -622,6 +656,9 @@ class EmployeeTimeApp:
         
         # Initialize report employee combo
         self.update_report_employee_combo()
+        
+        # Store last generated PDF path
+        self.last_pdf_path = None
     
     def create_export_tab(self):
         """Create data export tab"""
@@ -1152,7 +1189,7 @@ class EmployeeTimeApp:
         self.update_details_combo()
 
     def create_employee_details_window(self):
-        """Create a standalone window to display details of the selected employee - FIXED VERSION"""
+        """Create a standalone window to display details of the selected employee"""
         print("=== CREATE EMPLOYEE DETAILS WINDOW STARTED ===")
         
         # Get selected employee from TreeView
@@ -1197,7 +1234,7 @@ class EmployeeTimeApp:
         print(f"Looking up employee in database with database ID: {database_id}")
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
-        # FIXED: Search by database ID (id column) instead of employee_id
+        #Search by database ID (id column) instead of employee_id
         cursor.execute("SELECT * FROM employees WHERE id = ?", (database_id,))
         employee = cursor.fetchone()
         print(f"Database query result: {employee}")
@@ -1278,7 +1315,7 @@ class EmployeeTimeApp:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
     
-        # FIXED: Use database_id (employee[0]) for time_records queries
+        # Use database_id (employee[0]) for time_records queries
         print(f"Querying vacation days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
@@ -1320,7 +1357,7 @@ class EmployeeTimeApp:
         current_month = datetime.now().month
         
         print("Calculating monthly and yearly summaries...")
-        # FIXED: Use database_id for summary calculations
+        # Use database_id for summary calculations
         monthly_summary = self.time_tracker.calculate_monthly_summary(database_id, current_year, current_month)
         yearly_summary = self.time_tracker.calculate_yearly_summary(database_id, current_year)
         
@@ -1833,6 +1870,335 @@ class EmployeeTimeApp:
                 self.messagebox.showerror("Error", f"Failed to load record details: {str(e)}")
             detail_window.destroy()
 
+    def update_report_employee_combo(self):
+        """Update the employee combo box with available employees - Uses ReportManager"""
+        if not self.report_manager:
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, "⚠️  Report manager not initialized.\n")
+            return
+
+        try:
+            # Use ReportManager instead of employee_manager
+            employees = self.report_manager.get_available_employees()
+            employee_names = [f"{emp['name']} (ID: {emp['employee_id']})" for emp in employees]
+
+            self.report_emp_combo['values'] = employee_names
+            self.employees_data = employees
+
+            if employee_names:
+                self.report_emp_combo.current(0)
+                self.on_report_employee_selected(None)
+            else:
+                self.report_text.delete(1.0, tk.END)
+                self.report_text.insert(tk.END, "No employees found in database.\n")
+
+        except Exception as e:
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, f"Error loading employees: {e}\n")    
+    
+    def on_report_employee_selected(self, event):
+        """Handle employee selection to show available data months - Uses ReportManager"""
+        if not self.report_manager:
+            return
+
+        # Check if employees_data exists, if not initialize it
+        if not hasattr(self, 'employees_data') or not self.employees_data:
+            self.update_report_employee_combo()
+            return
+
+        try:
+            selected_index = self.report_emp_combo.current()
+            if selected_index >= 0 and selected_index < len(self.employees_data):
+                employee = self.employees_data[selected_index]
+
+                # Use ReportManager instead of direct database access
+                months = self.report_manager.get_available_months_for_employee(employee['id'])
+
+                if months:
+                    latest_month = months[0]
+                    self.report_year_var.set(latest_month['year'])
+                    self.report_month_var.set(latest_month['month'])
+
+                    self.report_text.delete(1.0, tk.END)
+                    self.report_text.insert(tk.END, f"Selected Employee: {employee['name']}\n")
+                    self.report_text.insert(tk.END, f"Employee ID: {employee['employee_id']}\n\n")
+                    self.report_text.insert(tk.END, "Available months with data:\n")
+                    for month_info in months:
+                        self.report_text.insert(tk.END, f"  • {month_info['display_name']} ({month_info['record_count']} records)\n")
+                    self.report_text.insert(tk.END, f"\nCurrent selection: {calendar.month_name[latest_month['month']]} {latest_month['year']}\n\n")
+                    self.report_text.insert(tk.END, "Click 'Generate Preview' to see report details\n")
+                    self.report_text.insert(tk.END, "Click 'Export PDF' to create PDF file")
+                else:
+                    self.report_text.delete(1.0, tk.END)
+                    self.report_text.insert(tk.END, f"Selected Employee: {employee['name']}\n")
+                    self.report_text.insert(tk.END, f"Employee ID: {employee['employee_id']}\n\n")
+                    self.report_text.insert(tk.END, "⚠️  No time records found for this employee.\n")
+
+        except Exception as e:
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, f"Error loading employee data: {e}")
+
+    def generate_report_preview(self):
+        """Generate a report preview in the text area"""
+        if not self.report_manager:
+            messagebox.showerror("Error", "Report manager not initialized. Please check your configuration.")
+            return
+
+        if self.report_generation_active:
+            messagebox.showinfo("Info", "Report generation already in progress...")
+            return
+
+        # Validate inputs
+        if not self.report_emp_combo.get():
+            messagebox.showerror("Error", "Please select an employee.")
+            return
+
+        # Check if employees_data exists and handle missing data
+        if not hasattr(self, 'employees_data') or not self.employees_data:
+            messagebox.showerror("Error", "Employee data not loaded. Please refresh the employee list.")
+            self.update_report_employee_combo()
+            return
+
+        try:
+            selected_index = self.report_emp_combo.current()
+
+            # Validate selected_index bounds
+            if selected_index < 0 or selected_index >= len(self.employees_data):
+                messagebox.showerror("Error", "Invalid employee selection. Please select a valid employee.")
+                return
+
+            employee = self.employees_data[selected_index]
+            year = self.report_year_var.get()
+            month = self.report_month_var.get()
+
+            # Start progress indication
+            self.report_generation_active = True
+            self.progress_label.config(text="Generating report preview...")
+            self.progress_bar.start()
+            self.generate_btn.config(state='disabled')
+
+            # Run in thread to avoid blocking UI
+            import threading
+            thread = threading.Thread(target=self._generate_report_worker, args=(employee['id'], year, month))
+            thread.daemon = True
+            thread.start()
+
+        except Exception as e:
+            self.report_generation_active = False
+            self.progress_bar.stop()
+            self.generate_btn.config(state='normal')
+            messagebox.showerror("Error", f"Failed to start report generation: {e}")    
+    
+    def _generate_report_worker(self, employee_id, year, month):
+        """Worker thread for report generation - Uses ReportManager"""
+        try:
+            # Use ReportManager methods instead of duplicating logic
+            employee_info = self.report_manager.get_employee_info(employee_id)
+            time_records = self.report_manager.get_time_records(employee_id, year, month)
+            summary = self.report_manager.calculate_summary(time_records)
+            company_info = self.report_manager.get_company_info()
+
+            month_name = calendar.month_name[month]
+
+            # Create detailed report preview
+            report_content = f"""
+    MONTHLY TIME REPORT PREVIEW
+    {'=' * 50}
+
+    Company: {company_info['company_name']}
+    Address: {company_info['company_street']}, {company_info['company_city']}
+    Phone: {company_info['company_phone']}
+    Email: {company_info['company_email']}
+
+    Employee Information:
+      Name: {employee_info['name']}
+      Employee ID: {employee_info['employee_number']}
+      Report Period: {month_name} {year}
+
+    SUMMARY:
+      Total Working Hours: {summary['total_hours']:.2f} hours
+      Vacation Days Used: {summary['vacation_days']} day(s)
+      Sick Leave Taken: {summary['sick_days']} day(s)
+      Total Break Time: {summary['total_break_minutes']} minutes
+
+    DETAILED TIME RECORDS:
+    {'─' * 80}
+    {'Date':<12} {'Start':<8} {'End':<8} {'Hours':<8} {'Break':<8} {'Vacation':<10} {'Sick':<6}
+    {'─' * 80}
+    """
+
+            for record in time_records:
+                vacation = "Yes" if record['is_vacation'] else "No"
+                sick = "Yes" if record['is_sick'] else "No"
+                hours = f"{record['hours_worked']:.1f}h" if record['hours_worked'] > 0 else "-"
+                break_time = f"{record['break_minutes']}min" if record['break_minutes'] > 0 else "-"
+
+                report_content += f"{record['date']:<12} {record['start_time']:<8} {record['end_time']:<8} {hours:<8} {break_time:<8} {vacation:<10} {sick:<6}\n"
+
+            report_content += f"\n{'─' * 80}\n"
+            report_content += f"Total: {summary['total_hours']:.2f} hours worked this month\n"
+
+            if summary['vacation_days'] > 0 or summary['sick_days'] > 0:
+                report_content += f"\nTime Off Summary:\n"
+                if summary['vacation_days'] > 0:
+                    report_content += f"  • Vacation days: {summary['vacation_days']}\n"
+                if summary['sick_days'] > 0:
+                    report_content += f"  • Sick days: {summary['sick_days']}\n"
+
+            report_content += f"\n📄 To generate PDF: Click 'Export PDF' button\n"
+            report_content += f"📊 Report generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+
+            # Update UI on main thread
+            self.root.after(0, self._report_generation_completed, report_content, None)
+
+        except Exception as e:
+            # Update UI on main thread with error
+            self.root.after(0, self._report_generation_completed, None, str(e))
+    
+    def _report_generation_completed(self, report_content, error):
+        """Called when report generation completes"""
+        self.report_generation_active = False
+        self.progress_bar.stop()
+        self.generate_btn.config(state='normal')
+        
+        if error:
+            self.progress_label.config(text="Error occurred")
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, f"❌ Error generating report:\n\n{error}")
+            messagebox.showerror("Generation Failed", f"Failed to generate report:\n\n{error}")
+        else:
+            self.progress_label.config(text="Report generated successfully")
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, report_content)
+            self.export_btn.config(state='normal')  # Enable PDF export
+    
+    def export_pdf_report(self):
+        """Export the current report as PDF"""
+        if not self.report_manager:
+            messagebox.showerror("Error", "Report manager not initialized.")
+            return
+
+        if self.report_generation_active:
+            messagebox.showinfo("Info", "Please wait for report generation to complete.")
+            return
+
+        # Validate inputs
+        if not self.report_emp_combo.get():
+            messagebox.showerror("Error", "Please select an employee and generate a report first.")
+            return
+
+        # Check if employees_data exists and handle missing data
+        if not hasattr(self, 'employees_data') or not self.employees_data:
+            messagebox.showerror("Error", "Employee data not loaded. Please refresh the employee list.")
+            self.update_report_employee_combo()
+            return
+
+        try:
+            selected_index = self.report_emp_combo.current()
+
+            # Validate selected_index bounds
+            if selected_index < 0 or selected_index >= len(self.employees_data):
+                messagebox.showerror("Error", "Invalid employee selection. Please select a valid employee.")
+                return
+
+            employee = self.employees_data[selected_index]
+            year = self.report_year_var.get()
+            month = self.report_month_var.get()
+
+            # Get default filename
+            employee_name = employee['name'].replace(' ', '_').replace('/', '_')
+            month_name = calendar.month_name[month]
+            default_filename = f"TimeReport_{employee_name}_{month_name}_{year}.pdf"
+
+            # Use initialdir instead of initialname, and set up the path properly
+            default_dir = os.path.expanduser("~/Documents")  # Default to Documents folder
+
+            # Ask user for save location
+            from tkinter import filedialog
+            file_path = filedialog.asksaveasfilename(
+                title="Save PDF Report",
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
+                initialdir=default_dir
+            )
+
+            # If user selected a path but didn't specify filename, append default filename
+            if file_path:
+                # Check if the selected path ends with .pdf, if not append the default filename
+                if not file_path.lower().endswith('.pdf'):
+                    # If user selected a directory or file without extension, append default filename
+                    if os.path.isdir(file_path):
+                        file_path = os.path.join(file_path, default_filename)
+                    else:
+                        file_path = file_path + '.pdf'
+
+                # Start PDF generation
+                self.progress_label.config(text="Generating PDF...")
+                self.progress_bar.start()
+                self.export_btn.config(state='disabled')
+
+                # Run in thread
+                thread = threading.Thread(target=self._export_pdf_worker, 
+                                        args=(employee['id'], year, month, file_path))
+                thread.daemon = True
+                thread.start()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to start PDF export: {e}")
+
+    def _export_pdf_worker(self, employee_id, year, month, file_path):
+        """Worker thread for PDF export - Uses ReportManager"""
+        try:
+            # Use ReportManager's PDF generation method
+            pdf_path = self.report_manager.generate_pdf_report(
+                employee_id=employee_id,
+                year=year,
+                month=month,
+                output_path=file_path
+            )
+
+            # Update UI on main thread
+            self.root.after(0, self._pdf_export_completed, pdf_path, None)
+
+        except Exception as e:
+            # Update UI on main thread with error
+            self.root.after(0, self._pdf_export_completed, None, str(e))    
+    
+    def _pdf_export_completed(self, pdf_path, error):
+        """Called when PDF export completes"""
+        self.progress_bar.stop()
+        self.export_btn.config(state='normal')
+        
+        if error:
+            self.progress_label.config(text="PDF export failed")
+            messagebox.showerror("Export Failed", f"Failed to export PDF:\n\n{error}")
+        else:
+            self.progress_label.config(text="PDF exported successfully")
+            self.last_pdf_path = pdf_path
+            
+            # Ask if user wants to open the PDF
+            if messagebox.askyesno("Success", f"PDF exported successfully to:\n{pdf_path}\n\nWould you like to open it?"):
+                try:
+                    import subprocess
+                    import platform
+                    
+                    if platform.system() == 'Windows':
+                        os.startfile(pdf_path)
+                    elif platform.system() == 'Darwin':  # macOS
+                        subprocess.run(['open', pdf_path])
+                    else:  # Linux
+                        subprocess.run(['xdg-open', pdf_path])
+                except Exception as e:
+                    messagebox.showwarning("Warning", f"Could not open PDF automatically: {e}")
+    
+    def clear_report(self):
+        """Clear the report display area"""
+        self.report_text.delete(1.0, tk.END)
+        self.report_text.insert(tk.END, "Report cleared. Select an employee and generate a new report.")
+        self.progress_label.config(text="Ready")
+        self.last_pdf_path = None
+
+
   # =============================================================================
   #  TIME MANAGEMENT METHODS
   # =============================================================================
@@ -1899,11 +2265,33 @@ class EmployeeTimeApp:
         self.emp_combo['values'] = emp_names
     
     def update_report_employee_combo(self):
-        """Update report employee combobox"""
-        employees = self.employee_manager.get_all_employees()
-        emp_names = ["All Employees"] + [f"{emp[1]} ({emp[2]})" for emp in employees]
-        self.report_emp_combo['values'] = emp_names
-    
+        """Update the employee combo box with available employees - Uses ReportManager"""
+        if not self.report_manager:
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, "⚠️  Report manager not initialized.\n")
+            return
+
+        try:
+            # Use ReportManager instead of employee_manager
+            employees = self.report_manager.get_available_employees()
+            employee_names = [f"{emp['name']} (ID: {emp['employee_id']})" for emp in employees]
+
+            self.report_emp_combo['values'] = employee_names
+            # Initialize employees_data as instance variable
+            self.employees_data = employees
+
+            if employee_names:
+                self.report_emp_combo.current(0)
+                self.on_report_employee_selected(None)
+            else:
+                self.report_text.delete(1.0, tk.END)
+                self.report_text.insert(tk.END, "No employees found in database.\n")
+
+        except Exception as e:
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, f"Error loading employees: {e}\n")
+            self.employees_data = []   
+
     def add_employee_dialog(self):
         """Show dialog to add new employee with strict ID validation"""
         dialog = tk.Toplevel(self.root)
@@ -2576,7 +2964,7 @@ class EmployeeTimeApp:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
 
-        # Get vacation days used this year - FIXED: use database_id (employee[0])
+        # Get vacation days used this year use database_id (employee[0])
         print(f"Querying vacation days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
@@ -2585,7 +2973,7 @@ class EmployeeTimeApp:
         vacation_used = cursor.fetchone()[0]
         print(f"Vacation days used: {vacation_used}")
 
-        # Get sick days used this year - FIXED: use database_id (employee[0])
+        # Get sick days used this year use database_id 
         print(f"Querying sick days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
@@ -2609,7 +2997,7 @@ class EmployeeTimeApp:
             foreground="green" if sick_remaining > 0 else "red"
         )
 
-        # Update statistics - FIXED: use database_id (employee[0])
+        # Update statistics
         print("Calculating statistics...")
         current_month = datetime.now().month
         monthly_summary = self.time_tracker.calculate_monthly_summary(database_id, current_year, current_month)
