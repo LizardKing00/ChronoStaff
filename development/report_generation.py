@@ -30,9 +30,72 @@ class ReportManager:
         conn.row_factory = sqlite3.Row  # Enable column access by name
         return conn
     
+    def get_available_employees(self) -> List[Dict[str, any]]:
+        """
+        Get list of all active employees for selection.
+        
+        Returns:
+            List of employee dictionaries with id, name, and employee_id
+        """
+        with self.connect_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, employee_id 
+                FROM employees 
+                WHERE active = 1 
+                ORDER BY name
+            """)
+            
+            employees = []
+            for row in cursor.fetchall():
+                employees.append({
+                    'id': row['id'],
+                    'name': row['name'],
+                    'employee_id': row['employee_id']
+                })
+            return employees
+    
+    def get_available_months_for_employee(self, employee_id: int) -> List[Dict[str, any]]:
+        """
+        Get available months with data for a specific employee.
+        
+        Args:
+            employee_id: Employee ID from the database
+            
+        Returns:
+            List of dictionaries with year, month, month_name, and record_count
+        """
+        with self.connect_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT 
+                    strftime('%Y', date) as year,
+                    strftime('%m', date) as month,
+                    COUNT(*) as record_count
+                FROM time_records 
+                WHERE employee_id = ?
+                GROUP BY strftime('%Y', date), strftime('%m', date)
+                ORDER BY year DESC, month DESC
+            """, (employee_id,))
+            
+            months = []
+            for row in cursor.fetchall():
+                year = int(row['year'])
+                month = int(row['month'])
+                month_name = calendar.month_name[month]
+                
+                months.append({
+                    'year': year,
+                    'month': month,
+                    'month_name': month_name,
+                    'display_name': f"{month_name} {year}",
+                    'record_count': row['record_count']
+                })
+            return months
+    
     def get_company_info(self) -> Dict[str, str]:
         """
-        Retrieve company information from settings table.
+        Retrieve company information from company_data table.
         
         Returns:
             Dictionary containing company information
@@ -40,28 +103,41 @@ class ReportManager:
         with self.connect_db() as conn:
             cursor = conn.cursor()
             
-            # Get all settings
-            cursor.execute("SELECT key, value FROM settings")
-            settings = dict(cursor.fetchall())
+            # Try to get from company_data table first
+            cursor.execute("SELECT * FROM company_data LIMIT 1")
+            company_row = cursor.fetchone()
             
-            # Default company info if not in settings
-            default_info = {
-                'company_name': 'My Company GmbH',
-                'company_street': 'Businessstraße 123',
-                'company_city': '10115 Berlin',
-                'company_phone': '+49-30-1234567',
-                'company_email': 'contact@mycompany.com',
-                'company_logo': 'company_logo.png',
-                'primary_color': '2B579A',
-                'secondary_color': '00A4EF',
-                'tertiary_color': '00A4EF'
-            }
-            
-            # Update with settings from database
-            for key, default_value in default_info.items():
-                default_info[key] = settings.get(key, default_value)
+            if company_row:
+                # Convert company_data to expected format
+                company_info = {
+                    'company_name': company_row['companyname'],
+                    'company_street': company_row['companystreet'] or 'Businessstraße 123',
+                    'company_city': company_row['companycity'] or '10115 Berlin', 
+                    'company_phone': company_row['companyphone'] or '+49-30-1234567',
+                    'company_email': company_row['companyemail'] or 'contact@mycompany.com',
+                    'company_logo': 'company_logo.png',  # Default logo
+                    'primary_color': (company_row['company_color_1'] or '#2B579A').replace('#', ''),
+                    'secondary_color': (company_row['company_color_2'] or '#00A4EF').replace('#', ''),
+                    'tertiary_color': (company_row['company_color_3'] or '#00A4EF').replace('#', '')
+                }
+            else:
+                # Fallback to settings table
+                cursor.execute("SELECT key, value FROM settings")
+                settings = dict(cursor.fetchall())
                 
-            return default_info
+                company_info = {
+                    'company_name': settings.get('company_name', 'My Company GmbH'),
+                    'company_street': settings.get('company_street', 'Businessstraße 123'),
+                    'company_city': settings.get('company_city', '10115 Berlin'),
+                    'company_phone': settings.get('company_phone', '+49-30-1234567'),
+                    'company_email': settings.get('company_email', 'contact@mycompany.com'),
+                    'company_logo': settings.get('company_logo', 'company_logo.png'),
+                    'primary_color': settings.get('primary_color', '2B579A'),
+                    'secondary_color': settings.get('secondary_color', '00A4EF'),
+                    'tertiary_color': settings.get('tertiary_color', '00A4EF')
+                }
+                
+            return company_info
     
     def get_employee_info(self, employee_id: int) -> Dict[str, str]:
         """
@@ -93,6 +169,7 @@ class ReportManager:
     def get_time_records(self, employee_id: int, year: int, month: int) -> List[Dict]:
         """
         Retrieve time records for a specific employee and month.
+        Works with the updated schema that has multiple start/end time pairs.
         
         Args:
             employee_id: Employee ID from the database
@@ -111,7 +188,9 @@ class ReportManager:
             end_date = f"{year}-{month:02d}-{days_in_month:02d}"
             
             cursor.execute("""
-                SELECT date, hours_worked, overtime_hours, record_type, notes
+                SELECT date, start_time_1, end_time_1, start_time_2, end_time_2, 
+                       start_time_3, end_time_3, hours_worked, overtime_hours, 
+                       record_type, notes, total_break_time, total_time_present
                 FROM time_records 
                 WHERE employee_id = ? 
                 AND date BETWEEN ? AND ?
@@ -127,23 +206,35 @@ class ReportManager:
             for day in range(1, days_in_month + 1):
                 date_str = f"{year}-{month:02d}-{day:02d}"
                 date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                weekday = date_obj.weekday()  # 0=Monday, 6=Sunday
                 
                 if date_str in record_dict:
                     record = record_dict[date_str]
-                    time_data.append({
-                        'date': date_obj.strftime("%d.%m.%Y"),
-                        'start_time': '09:00',  # Default start time
-                        'end_time': self._calculate_end_time('09:00', record['hours_worked']),
-                        'total_minutes': int(record['hours_worked'] * 60),
-                        'break_minutes': 30 if record['hours_worked'] > 6 else 0,
-                        'is_vacation': record['record_type'] == 'vacation',
-                        'is_sick': record['record_type'] == 'sick',
-                        'hours_worked': record['hours_worked']
-                    })
-                else:
-                    # Weekend or no record
-                    weekday = date_obj.weekday()
-                    if weekday < 5:  # Monday to Friday
+                    
+                    # Handle different record types
+                    if record['record_type'] == 'vacation':
+                        time_data.append({
+                            'date': date_obj.strftime("%d.%m.%Y"),
+                            'start_time': '-',
+                            'end_time': '-',
+                            'total_minutes': 0,
+                            'break_minutes': 0,
+                            'is_vacation': True,
+                            'is_sick': False,
+                            'hours_worked': 0
+                        })
+                    elif record['record_type'] == 'sick':
+                        time_data.append({
+                            'date': date_obj.strftime("%d.%m.%Y"),
+                            'start_time': '-',
+                            'end_time': '-',
+                            'total_minutes': 0,
+                            'break_minutes': 0,
+                            'is_vacation': False,
+                            'is_sick': True,
+                            'hours_worked': 0
+                        })
+                    elif record['record_type'] == 'holiday':
                         time_data.append({
                             'date': date_obj.strftime("%d.%m.%Y"),
                             'start_time': '-',
@@ -154,8 +245,68 @@ class ReportManager:
                             'is_sick': False,
                             'hours_worked': 0
                         })
+                    else:
+                        # Regular work day - use the first start/end time pair for simplicity in reports
+                        start_time = self._format_time(record['start_time_1']) if record['start_time_1'] else '09:00'
+                        end_time = self._format_time(record['end_time_1']) if record['end_time_1'] else self._calculate_end_time(start_time, record['hours_worked'] or 0)
+                        
+                        # Calculate break minutes from hours
+                        break_hours = record['total_break_time'] or 0
+                        break_minutes = int(break_hours * 60)
+                        
+                        hours_worked = record['hours_worked'] or 0
+                        
+                        time_data.append({
+                            'date': date_obj.strftime("%d.%m.%Y"),
+                            'start_time': start_time,
+                            'end_time': end_time,
+                            'total_minutes': int(hours_worked * 60),
+                            'break_minutes': break_minutes,
+                            'is_vacation': False,
+                            'is_sick': False,
+                            'hours_worked': hours_worked
+                        })
+                else:
+                    # No record for this date
+                    if weekday < 5:  # Monday to Friday - show as potential work day
+                        time_data.append({
+                            'date': date_obj.strftime("%d.%m.%Y"),
+                            'start_time': '-',
+                            'end_time': '-',
+                            'total_minutes': 0,
+                            'break_minutes': 0,
+                            'is_vacation': False,
+                            'is_sick': False,
+                            'hours_worked': 0
+                        })
+                    # Skip weekends (don't add to table)
             
             return time_data
+    
+    def _format_time(self, time_str: str) -> str:
+        """
+        Format time string to HH:MM format.
+        
+        Args:
+            time_str: Time string in various formats
+            
+        Returns:
+            Time string in HH:MM format
+        """
+        if not time_str or time_str == '-':
+            return '-'
+        
+        try:
+            # Handle different time formats
+            if ':' in time_str:
+                parts = time_str.split(':')
+                hour = int(parts[0])
+                minute = int(parts[1])
+                return f"{hour:02d}:{minute:02d}"
+            else:
+                return time_str
+        except (ValueError, IndexError):
+            return '-'
     
     def _calculate_end_time(self, start_time: str, hours_worked: float) -> str:
         """
@@ -171,14 +322,17 @@ class ReportManager:
         if hours_worked == 0:
             return '-'
             
-        start_hour, start_minute = map(int, start_time.split(':'))
-        start_datetime = datetime(2000, 1, 1, start_hour, start_minute)
-        
-        # Add worked hours plus break time
-        break_time = 0.5 if hours_worked > 6 else 0  # 30 minutes break for >6 hours
-        end_datetime = start_datetime + timedelta(hours=hours_worked + break_time)
-        
-        return end_datetime.strftime("%H:%M")
+        try:
+            start_hour, start_minute = map(int, start_time.split(':'))
+            start_datetime = datetime(2000, 1, 1, start_hour, start_minute)
+            
+            # Add worked hours plus break time
+            break_time = 0.5 if hours_worked > 6 else 0  # 30 minutes break for >6 hours
+            end_datetime = start_datetime + timedelta(hours=hours_worked + break_time)
+            
+            return end_datetime.strftime("%H:%M")
+        except (ValueError, TypeError):
+            return '-'
     
     def calculate_summary(self, time_records: List[Dict]) -> Dict[str, float]:
         """
@@ -258,26 +412,60 @@ class ReportManager:
         
         # Replace DATA4 - Summary Row
         total_minutes = int(summary['total_hours'] * 60)
-        data4_replacement = f"    \\multicolumn{{3}}{{|l|}}{{\\textbf{{Total}}}} & {total_minutes} & {summary['total_break_minutes']} & {summary['vacation_days']} days & {summary['sick_days']} days \\\\"
+        vacation_text = f"{summary['vacation_days']} day{'s' if summary['vacation_days'] != 1 else ''}"
+        sick_text = f"{summary['sick_days']} day{'s' if summary['sick_days'] != 1 else ''}"
+        data4_replacement = f"    \\multicolumn{{3}}{{|l|}}{{\\textbf{{Total}}}} & {total_minutes} & {summary['total_break_minutes']} & {vacation_text} & {sick_text} \\\\"
         
         # Replace DATA5 - Summary Statistics
         data5_replacement = f"""\\textbf{{Total Working Hours:}} & {summary['total_hours']:.2f} hours \\\\
-    \\textbf{{Vacation Days Used:}} & {summary['vacation_days']} days \\\\
-    \\textbf{{Sick Leave Taken:}} & {summary['sick_days']} days \\\\[0.5cm]"""
+    \\textbf{{Vacation Days Used:}} & {summary['vacation_days']} day{'s' if summary['vacation_days'] != 1 else ''} \\\\
+    \\textbf{{Sick Leave Taken:}} & {summary['sick_days']} day{'s' if summary['sick_days'] != 1 else ''} \\\\[0.5cm]"""
         
-        # Perform replacements
-        replacements = [
-            (f"% ___DATA0___\n\\newcommand{{\\companyname}}{{My Company GmbH}} % Company name\n\\newcommand{{\\companystreet}}{{Businessstraße 123}} % Street address\n\\newcommand{{\\companycity}}{{10115 Berlin}} % City with ZIP\n\\newcommand{{\\companyphone}}{{+49-30-1234567}} % Phone number\n\\newcommand{{\\companyemail}}{{contact@mycompany.com}} % Email address\n\\newcommand{{\\companylogo}}{{company_logo.png}} % Path to logo file", f"% ___DATA0___\n{data0_replacement}"),
-            (f"% ___DATA1___\n\\newcommand{{\\employeename}}{{Max Mustermann}} % Employee name\n\\newcommand{{\\employeenumber}}{{10042}} % Personnel number\n\\newcommand{{\\reportperiod}}{{February 2025}} % Reporting period", f"% ___DATA1___\n{data1_replacement}"),
-            (f"% ___DATA2___\n\\definecolor{{primary}}{{HTML}}{{2B579A}}  % Company primary color\n\\definecolor{{secondary}}{{HTML}}{{00A4EF}} % Company secondary color\n\\definecolor{{tertiary}}{{HTML}}{{00A4EF}} % Company tertiary color", f"% ___DATA2___\n{data2_replacement}"),
-            (f"    % ___DATA3___\n    01.01.2023 & 09:00 & 17:00 & 480 & 30 & No & No \\\\\n    02.01.2023 & 08:30 & 16:45 & 495 & 45 & No & No \\\\\n    03.01.2023 & - & - & 0 & 0 & Yes & No \\\\", f"    % ___DATA3___\n{data3_replacement}"),
-            (f"    % ___DATA4___\n    \\multicolumn{{3}}{{|l|}}{{\\textbf{{Total}}}} & 975 & 75 & 0 days & 0 days \\\\", f"    % ___DATA4___\n{data4_replacement}"),
-            (f"    % ___DATA5___\n    \\textbf{{Total Working Hours:}} & 16.25 hours \\\\\n    \\textbf{{Vacation Days Used:}} & 0 days \\\\\n    \\textbf{{Sick Leave Taken:}} & 0 days \\\\[0.5cm]", f"    % ___DATA5___\n    {data5_replacement}")
-        ]
-        
+        # Perform replacements using more precise matching
         result = template
-        for old_text, new_text in replacements:
-            result = result.replace(old_text, new_text)
+        
+        # Replace DATA0
+        old_data0 = """% ___DATA0___
+\\newcommand{\\companyname}{My Company GmbH} % Company name
+\\newcommand{\\companystreet}{Businessstraße 123} % Street address
+\\newcommand{\\companycity}{10115 Berlin} % City with ZIP
+\\newcommand{\\companyphone}{+49-30-1234567} % Phone number
+\\newcommand{\\companyemail}{contact@mycompany.com} % Email address
+\\newcommand{\\companylogo}{company_logo.png} % Path to logo file"""
+        result = result.replace(old_data0, f"% ___DATA0___\n{data0_replacement}")
+        
+        # Replace DATA1
+        old_data1 = """% ___DATA1___
+\\newcommand{\\employeename}{Max Mustermann} % Employee name
+\\newcommand{\\employeenumber}{10042} % Personnel number
+\\newcommand{\\reportperiod}{February 2025} % Reporting period"""
+        result = result.replace(old_data1, f"% ___DATA1___\n{data1_replacement}")
+        
+        # Replace DATA2
+        old_data2 = """% ___DATA2___
+\\definecolor{primary}{HTML}{2B579A}  % Company primary color
+\\definecolor{secondary}{HTML}{00A4EF} % Company secondary color
+\\definecolor{tertiary}{HTML}{00A4EF} % Company tertiary color"""
+        result = result.replace(old_data2, f"% ___DATA2___\n{data2_replacement}")
+        
+        # Replace DATA3
+        old_data3 = """    % ___DATA3___
+    01.01.2023 & 09:00 & 17:00 & 480 & 30 & No & No \\\\
+    02.01.2023 & 08:30 & 16:45 & 495 & 45 & No & No \\\\
+    03.01.2023 & - & - & 0 & 0 & Yes & No \\\\"""
+        result = result.replace(old_data3, f"    % ___DATA3___\n{data3_replacement}")
+        
+        # Replace DATA4
+        old_data4 = """    % ___DATA4___
+    \\multicolumn{3}{|l|}{\\textbf{Total}} & 975 & 75 & 1 day & 0 days \\\\"""
+        result = result.replace(old_data4, f"    % ___DATA4___\n{data4_replacement}")
+        
+        # Replace DATA5
+        old_data5 = """    % ___DATA5___
+    \\textbf{Total Working Hours:} & 16.25 hours \\\\
+    \\textbf{Vacation Days Used:} & 1 day \\\\
+    \\textbf{Sick Leave Taken:} & 0 days \\\\[0.5cm]"""
+        result = result.replace(old_data5, f"    % ___DATA5___\n    {data5_replacement}")
         
         return result
     
@@ -296,6 +484,8 @@ class ReportManager:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(latex_content)
         
+        print(f"LaTeX report saved to: {output_path}")
+    
     def compile_tex_to_pdf(self, tex_path: str, output_dir: str = None, delete_tex: bool = False, 
                           delete_aux_files: bool = True) -> str:
         """
@@ -347,12 +537,13 @@ class ReportManager:
             
             # Copy any additional files that might be needed (like logo)
             tex_dir = os.path.dirname(tex_path)
-            for file in os.listdir(tex_dir):
-                if file.endswith(('.png', '.jpg', '.jpeg', '.pdf', '.eps')):
-                    src_file = os.path.join(tex_dir, file)
-                    dst_file = os.path.join(temp_dir, file)
-                    if os.path.isfile(src_file):
-                        shutil.copy2(src_file, dst_file)
+            if tex_dir:  # Only if tex_dir is not empty
+                for file in os.listdir(tex_dir):
+                    if file.endswith(('.png', '.jpg', '.jpeg', '.pdf', '.eps')):
+                        src_file = os.path.join(tex_dir, file)
+                        dst_file = os.path.join(temp_dir, file)
+                        if os.path.isfile(src_file):
+                            shutil.copy2(src_file, dst_file)
             
             try:
                 # Run pdflatex twice to resolve references
@@ -426,7 +617,7 @@ class ReportManager:
         
         Args:
             employee_id: Employee ID from the database
-            year: Year for the report
+            year: Year for the report  
             month: Month for the report (1-12)
             output_path: Path where the generated PDF should be saved (with .pdf extension)
             delete_tex: Whether to delete the intermediate .tex file
@@ -451,6 +642,8 @@ class ReportManager:
             
             with open(temp_tex_path, 'w', encoding='utf-8') as f:
                 f.write(latex_content)
+            
+            print(f"Generated LaTeX file: {temp_tex_path}")
             
             # Compile to PDF
             pdf_path = self.compile_tex_to_pdf(
@@ -477,43 +670,98 @@ class ReportManager:
                     pass
             raise e
 
+# Utility functions for UI integration
+def list_employees(db_path: str) -> List[Dict[str, any]]:
+    """
+    Get list of all active employees for UI selection.
+    
+    Args:
+        db_path: Path to the SQLite database file
+        
+    Returns:
+        List of employee dictionaries
+    """
+    report_manager = ReportManager(db_path, "")  # Template path not needed for this
+    return report_manager.get_available_employees()
+
+def list_available_months(db_path: str, employee_id: int) -> List[Dict[str, any]]:
+    """
+    Get available months with data for UI selection.
+    
+    Args:
+        db_path: Path to the SQLite database file
+        employee_id: Employee ID from the database
+        
+    Returns:
+        List of month dictionaries
+    """
+    report_manager = ReportManager(db_path, "")  # Template path not needed for this
+    return report_manager.get_available_months_for_employee(employee_id)
+
+def generate_report(db_path: str, template_path: str, employee_id: int, 
+                   year: int, month: int, output_path: str) -> str:
+    """
+    Generate a PDF report for the specified parameters.
+    
+    Args:
+        db_path: Path to the SQLite database file
+        template_path: Path to the LaTeX template file
+        employee_id: Employee ID from the database
+        year: Year for the report
+        month: Month for the report (1-12)
+        output_path: Path where the generated PDF should be saved
+        
+    Returns:
+        Path to the generated PDF file
+        
+    Raises:
+        Various exceptions for missing files, compilation errors, etc.
+    """
+    report_manager = ReportManager(db_path, template_path)
+    return report_manager.generate_pdf_report(employee_id, year, month, output_path)
+
 # Example usage:
 if __name__ == "__main__":
+    # Configuration
+    db_path = "/home/zarathustra/repos/ChronoStaff/data/employee_time.db"
+    template_path = "resources/templates/time_report_1.tex"  # Updated to use your template
+    
     # Initialize the ReportManager
-    report_manager = ReportManager(
-        db_path="/home/zarathustra/repos/ChronoStaff/data/employee_time.db",
-        template_path="resources/templates/time_report_2.tex"
-    )
+    report_manager = ReportManager(db_path, template_path)
     
     try:
-        # Option 1: Generate LaTeX file only
-        report_manager.save_report(
-            employee_id=2,
-            year=2025,
-            month=5,
-            output_path="generated_report.tex"
-        )
+        # Example 1: List all employees
+        print("Available employees:")
+        employees = report_manager.get_available_employees()
+        for emp in employees:
+            print(f"  ID: {emp['id']}, Name: {emp['name']}, Employee #: {emp['employee_id']}")
         
-        # Option 2: Generate PDF directly (deletes .tex file by default)
-        pdf_path = report_manager.generate_pdf_report(
-            employee_id=2,
-            year=2025,
-            month=1,
-            output_path="may_2025_report.pdf",
-            delete_tex=True,  # Delete .tex file after compilation
-            delete_aux_files=True  # Delete auxiliary files (.aux, .log, etc.)
-        )
-        print(f"PDF report saved to: {pdf_path}")
-        
-        # Option 3: Compile existing .tex file to PDF
-        # pdf_path = report_manager.compile_tex_to_pdf(
-        #     tex_path="existing_report.tex",
-        #     delete_tex=False,  # Keep the .tex file
-        #     delete_aux_files=True
-        # )
+        if employees:
+            # Example 2: List available months for first employee
+            first_emp_id = employees[0]['id']
+            print(f"\nAvailable months for {employees[0]['name']}:")
+            months = report_manager.get_available_months_for_employee(first_emp_id)
+            for month_info in months:
+                print(f"  {month_info['display_name']} ({month_info['record_count']} records)")
+            
+            if months:
+                # Example 3: Generate PDF report
+                month_info = months[0]  # Most recent month
+                output_file = f"report_{employees[0]['name'].replace(' ', '_')}_{month_info['year']}_{month_info['month']:02d}.pdf"
+                
+                print(f"\nGenerating PDF report: {output_file}")
+                pdf_path = report_manager.generate_pdf_report(
+                    employee_id=first_emp_id,
+                    year=month_info['year'],
+                    month=month_info['month'],
+                    output_path=output_file
+                )
+                print(f"Report generated successfully: {pdf_path}")
         
     except FileNotFoundError as e:
         print(f"Error: {e}")
         print("Make sure you have LaTeX installed (e.g., TeX Live or MiKTeX)")
     except Exception as e:
         print(f"Error generating report: {e}")
+        import traceback
+        traceback.print_exc()
