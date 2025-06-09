@@ -18,36 +18,424 @@ except ImportError:
 
 class ReportManager:
     """
-    Manages the generation of LaTeX time reports from database data.
-    Replaces placeholders in the LaTeX template with actual employee and time data.
+    Manages the generation of time reports from database data.
+    Supports multiple templates: default (reportlab), latex black/white, and latex color.
     """
     
-    def __init__(self, db_path: str, template_path: str):
+    # Template constants
+    TEMPLATE_DEFAULT = "default"
+    TEMPLATE_LATEX_BW = "latex_bw"
+    TEMPLATE_LATEX_COLOR = "latex_color"
+    
+    def __init__(self, db_path: str, templates_dir: str = "resources/templates"):
         """
         Initialize the ReportManager.
         
         Args:
             db_path: Path to the SQLite database file
-            template_path: Path to the LaTeX template file
+            templates_dir: Directory containing LaTeX template files
         """
         self.db_path = db_path
-        self.template_path = template_path
+        self.templates_dir = templates_dir
         self.use_reportlab = REPORTLAB_AVAILABLE 
 
     def is_reportlab_available(self) -> bool:
         """Check if reportlab is available for PDF generation."""
         return REPORTLAB_AVAILABLE
 
-    def set_pdf_method(self, use_reportlab: bool = True):
+    def get_report_settings(self) -> Dict[str, str]:
         """
-        Set which PDF generation method to use.
+        Get report template settings from the database.
+        
+        Returns:
+            Dictionary containing report settings
+        """
+        with self.connect_db() as conn:
+            cursor = conn.cursor()
+            
+            # Try to get from report_settings table first
+            try:
+                cursor.execute("SELECT lang, template, default_output_path FROM report_settings WHERE id = 1")
+                row = cursor.fetchone()
+                
+                if row:
+                    # Map database template values to our constants - FIXED MAPPING
+                    db_template = row[1] or 'default'  # Default to 'default' if None
+                    print(f"Database template value: '{db_template}'")  # Debug print
+                    
+                    # CORRECTED mapping logic
+                    if db_template == 'default':
+                        template = self.TEMPLATE_DEFAULT
+                    elif db_template == 'color':
+                        template = self.TEMPLATE_LATEX_COLOR
+                    elif db_template == 'black-white':
+                        template = self.TEMPLATE_LATEX_BW
+                    else:
+                        # Fallback to default for unknown values
+                        template = self.TEMPLATE_DEFAULT
+                        print(f"Warning: Unknown template value '{db_template}', using default")
+                    
+                    print(f"Mapped to template constant: '{template}'")  # Debug print
+                    
+                    return {
+                        'template': template,
+                        'lang': row[0] or 'en',
+                        'default_output_path': row[2] or './reports/',
+                        'templates_dir': self.templates_dir
+                    }
+                else:
+                    # Fallback to settings table for backward compatibility
+                    cursor.execute("SELECT key, value FROM settings WHERE key LIKE 'report_%'")
+                    settings = dict(cursor.fetchall())
+                    
+                    # Check if we have a report_template setting
+                    if 'report_template' in settings:
+                        template = settings['report_template']
+                    else:
+                        # Default to reportlab template
+                        template = self.TEMPLATE_DEFAULT
+                    
+                    return {
+                        'template': template,
+                        'templates_dir': settings.get('report_templates_dir', self.templates_dir)
+                    }
+                    
+            except sqlite3.OperationalError:
+                # Settings table might not exist or have the columns
+                # Return default settings
+                return {
+                    'template': self.TEMPLATE_DEFAULT,
+                    'templates_dir': self.templates_dir
+                }
+
+    def get_template_path(self, template_type: str) -> str:
+        """
+        Get the file path for a specific template.
         
         Args:
-            use_reportlab: If True, use reportlab. If False, use LaTeX.
+            template_type: Type of template (default, latex_bw, latex_color)
+            
+        Returns:
+            Path to the template file
+            
+        Raises:
+            ValueError: If template type is not supported
         """
-        if use_reportlab and not REPORTLAB_AVAILABLE:
-            raise ImportError("reportlab not available. Install with: pip install reportlab")
-        self.use_reportlab = use_reportlab
+        if template_type == self.TEMPLATE_DEFAULT:
+            return None  # Uses reportlab, no template file needed
+        elif template_type == self.TEMPLATE_LATEX_BW:
+            return os.path.join(self.templates_dir, "time_report_1.tex")
+        elif template_type == self.TEMPLATE_LATEX_COLOR:
+            return os.path.join(self.templates_dir, "time_report_2.tex")
+        else:
+            raise ValueError(f"Unsupported template type: {template_type}")
+
+    def generate_pdf_report(self, employee_id: int, year: int, month: int, output_path: str,
+                           delete_tex: bool = True, delete_aux_files: bool = True) -> str:
+        """
+        Generate a complete PDF report directly from database data.
+        Uses the template specified in database settings.
+        
+        Args:
+            employee_id: Employee ID from the database
+            year: Year for the report  
+            month: Month for the report (1-12)
+            output_path: Path where the generated PDF should be saved (with .pdf extension)
+            delete_tex: Whether to delete the intermediate .tex file (LaTeX only)
+            delete_aux_files: Whether to delete auxiliary LaTeX files (LaTeX only)
+            
+        Returns:
+            Path to the generated PDF file
+        """
+        # Get report settings from database
+        settings = self.get_report_settings()
+        template_type = settings['template']
+        
+        print(f"Generating report using template: {template_type}")
+        
+        # Generate report based on template type
+        if template_type == self.TEMPLATE_DEFAULT:
+            if not REPORTLAB_AVAILABLE:
+                print("Warning: reportlab not available, falling back to LaTeX black/white template")
+                return self._generate_latex_pdf(employee_id, year, month, output_path, 
+                                               self.TEMPLATE_LATEX_BW, delete_tex, delete_aux_files)
+            return self.generate_reportlab_pdf(employee_id, year, month, output_path)
+        
+        elif template_type in [self.TEMPLATE_LATEX_BW, self.TEMPLATE_LATEX_COLOR]:
+            return self._generate_latex_pdf(employee_id, year, month, output_path, 
+                                          template_type, delete_tex, delete_aux_files)
+        else:
+            raise ValueError(f"Unsupported template type in database: {template_type}")
+
+    def _generate_latex_pdf(self, employee_id: int, year: int, month: int, output_path: str,
+                           template_type: str, delete_tex: bool = True, delete_aux_files: bool = True) -> str:
+        """
+        Generate PDF using LaTeX template.
+        
+        Args:
+            employee_id: Employee ID from the database
+            year: Year for the report
+            month: Month for the report (1-12)
+            output_path: Path where the PDF should be saved
+            template_type: Type of LaTeX template to use
+            delete_tex: Whether to delete the .tex file after compilation
+            delete_aux_files: Whether to delete auxiliary files
+            
+        Returns:
+            Path to the generated PDF file
+        """
+        # Get template path
+        template_path = self.get_template_path(template_type)
+        if not template_path or not os.path.exists(template_path):
+            raise FileNotFoundError(f"Template file not found: {template_path}")
+        
+        # Ensure output path has .pdf extension
+        if not output_path.endswith('.pdf'):
+            output_path += '.pdf'
+        
+        # Create temporary .tex file
+        output_dir = os.path.dirname(output_path) or '.'
+        pdf_name = os.path.basename(output_path)
+        tex_name = pdf_name.replace('.pdf', '.tex')
+        temp_tex_path = os.path.join(output_dir, tex_name)
+        
+        try:
+            # Generate LaTeX content and save to temporary file
+            latex_content = self.generate_latex_content(employee_id, year, month, template_path)
+            
+            with open(temp_tex_path, 'w', encoding='utf-8') as f:
+                f.write(latex_content)
+            
+            print(f"Generated LaTeX file: {temp_tex_path}")
+            
+            # Compile to PDF
+            pdf_path = self.compile_tex_to_pdf(
+                tex_path=temp_tex_path,
+                output_dir=output_dir,
+                delete_tex=delete_tex,
+                delete_aux_files=delete_aux_files
+            )
+            
+            # Rename PDF to desired output path if different
+            final_pdf_path = os.path.join(output_dir, pdf_name)
+            if pdf_path != final_pdf_path:
+                shutil.move(pdf_path, final_pdf_path)
+                pdf_path = final_pdf_path
+            
+            return pdf_path
+            
+        except Exception as e:
+            # Clean up temporary tex file if something went wrong
+            if os.path.exists(temp_tex_path):
+                try:
+                    os.remove(temp_tex_path)
+                except OSError:
+                    pass
+            raise e
+
+    def generate_latex_content(self, employee_id: int, year: int, month: int, template_path: str) -> str:
+        """
+        Generate the complete LaTeX content with data populated.
+        
+        Args:
+            employee_id: Employee ID from the database
+            year: Year for the report
+            month: Month for the report (1-12)
+            template_path: Path to the LaTeX template file
+            
+        Returns:
+            Complete LaTeX content as string
+        """
+        # Read the template
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template = f.read()
+        
+        # Get data
+        company_info = self.get_company_info()
+        employee_info = self.get_employee_info(employee_id)
+        time_records = self.get_time_records(employee_id, year, month)
+        summary = self.calculate_summary(time_records)
+        
+        month_name = calendar.month_name[month]
+        report_period = f"{month_name} {year}"
+        
+        # Replace DATA0 - Company Information
+        data0_replacement = f"""\\newcommand{{\\companyname}}{{{company_info['company_name']}}} % Company name
+\\newcommand{{\\companystreet}}{{{company_info['company_street']}}} % Street address
+\\newcommand{{\\companycity}}{{{company_info['company_city']}}} % City with ZIP
+\\newcommand{{\\companyphone}}{{{company_info['company_phone']}}} % Phone number
+\\newcommand{{\\companyemail}}{{{company_info['company_email']}}} % Email address
+\\newcommand{{\\companylogo}}{{{company_info['company_logo']}}} % Path to logo file"""
+        
+        # Replace DATA1 - Employee Information
+        data1_replacement = f"""\\newcommand{{\\employeename}}{{{employee_info['name']}}} % Employee name
+\\newcommand{{\\employeenumber}}{{{employee_info['employee_number']}}} % Personnel number
+\\newcommand{{\\reportperiod}}{{{report_period}}} % Reporting period"""
+        
+        # Replace DATA2 - Company Colors
+        data2_replacement = f"""\\definecolor{{primary}}{{HTML}}{{{company_info['primary_color']}}}  % Company primary color
+\\definecolor{{secondary}}{{HTML}}{{{company_info['secondary_color']}}} % Company secondary color
+\\definecolor{{tertiary}}{{HTML}}{{{company_info['tertiary_color']}}} % Company tertiary color"""
+        
+        # Replace DATA3 - Time Records Table Rows
+        data3_rows = []
+        for record in time_records:
+            vacation_text = "Yes" if record['is_vacation'] else "No"
+            sick_text = "Yes" if record['is_sick'] else "No"
+            
+            row = f"    {record['date']} & {record['start_time']} & {record['end_time']} & {record['total_minutes']} & {record['break_minutes']} & {vacation_text} & {sick_text} \\\\"
+            data3_rows.append(row)
+        
+        data3_replacement = "\n".join(data3_rows)
+        
+        # Replace DATA4 - Summary Row
+        total_minutes = int(summary['total_hours'] * 60)
+        vacation_text = f"{summary['vacation_days']} day{'s' if summary['vacation_days'] != 1 else ''}"
+        sick_text = f"{summary['sick_days']} day{'s' if summary['sick_days'] != 1 else ''}"
+        data4_replacement = f"    \\multicolumn{{3}}{{|l|}}{{\\textbf{{Total}}}} & {total_minutes} & {summary['total_break_minutes']} & {vacation_text} & {sick_text} \\\\"
+        
+        # Replace DATA5 - Summary Statistics
+        data5_replacement = f"""\\textbf{{Total Working Hours:}} & {summary['total_hours']:.2f} hours \\\\
+    \\textbf{{Vacation Days Used:}} & {summary['vacation_days']} day{'s' if summary['vacation_days'] != 1 else ''} \\\\
+    \\textbf{{Sick Leave Taken:}} & {summary['sick_days']} day{'s' if summary['sick_days'] != 1 else ''} \\\\[0.5cm]"""
+        
+        # Perform replacements using more precise matching
+        result = template
+        
+        # Replace DATA0
+        old_data0 = """% ___DATA0___
+\\newcommand{\\companyname}{My Company GmbH} % Company name
+\\newcommand{\\companystreet}{Businessstraße 123} % Street address
+\\newcommand{\\companycity}{10115 Berlin} % City with ZIP
+\\newcommand{\\companyphone}{+49-30-1234567} % Phone number
+\\newcommand{\\companyemail}{contact@mycompany.com} % Email address
+\\newcommand{\\companylogo}{company_logo.png} % Path to logo file"""
+        result = result.replace(old_data0, f"% ___DATA0___\n{data0_replacement}")
+        
+        # Replace DATA1
+        old_data1 = """% ___DATA1___
+\\newcommand{\\employeename}{Max Mustermann} % Employee name
+\\newcommand{\\employeenumber}{10042} % Personnel number
+\\newcommand{\\reportperiod}{February 2025} % Reporting period"""
+        result = result.replace(old_data1, f"% ___DATA1___\n{data1_replacement}")
+        
+        # Replace DATA2
+        old_data2 = """% ___DATA2___
+\\definecolor{primary}{HTML}{2B579A}  % Company primary color
+\\definecolor{secondary}{HTML}{00A4EF} % Company secondary color
+\\definecolor{tertiary}{HTML}{00A4EF} % Company tertiary color"""
+        result = result.replace(old_data2, f"% ___DATA2___\n{data2_replacement}")
+        
+        # Replace DATA3
+        old_data3 = """    % ___DATA3___
+    01.01.2023 & 09:00 & 17:00 & 480 & 30 & No & No \\\\
+    02.01.2023 & 08:30 & 16:45 & 495 & 45 & No & No \\\\
+    03.01.2023 & - & - & 0 & 0 & Yes & No \\\\"""
+        result = result.replace(old_data3, f"    % ___DATA3___\n{data3_replacement}")
+        
+        # Replace DATA4
+        old_data4 = """    % ___DATA4___
+    \\multicolumn{3}{|l|}{\\textbf{Total}} & 975 & 75 & 1 day & 0 days \\\\"""
+        result = result.replace(old_data4, f"    % ___DATA4___\n{data4_replacement}")
+        
+        # Replace DATA5
+        old_data5 = """    % ___DATA5___
+    \\textbf{Total Working Hours:} & 16.25 hours \\\\
+    \\textbf{Vacation Days Used:} & 1 day \\\\
+    \\textbf{Sick Leave Taken:} & 0 days \\\\[0.5cm]"""
+        result = result.replace(old_data5, f"    % ___DATA5___\n    {data5_replacement}")
+        
+        return result
+
+    def set_report_template(self, template_type: str) -> None:
+        """
+        Set the report template in the database settings.
+        
+        Args:
+            template_type: Type of template (default, latex_bw, latex_color)
+            
+        Raises:
+            ValueError: If template type is not supported
+        """
+        if template_type not in [self.TEMPLATE_DEFAULT, self.TEMPLATE_LATEX_BW, self.TEMPLATE_LATEX_COLOR]:
+            raise ValueError(f"Unsupported template type: {template_type}")
+        
+        with self.connect_db() as conn:
+            cursor = conn.cursor()
+            
+            # Map our template constants to database values
+            db_template_value = 'color'  # default
+            if template_type == self.TEMPLATE_LATEX_BW:
+                db_template_value = 'black-white'
+            elif template_type == self.TEMPLATE_LATEX_COLOR:
+                db_template_value = 'color'
+            elif template_type == self.TEMPLATE_DEFAULT:
+                db_template_value = 'default'
+            
+            try:
+                # Try to update report_settings table first
+                cursor.execute('''
+                    INSERT OR REPLACE INTO report_settings (id, template, updated_at) 
+                    VALUES (1, ?, CURRENT_TIMESTAMP)
+                ''', (db_template_value,))
+                
+                conn.commit()
+                print(f"Report template set to: {template_type} (database value: {db_template_value})")
+                
+            except sqlite3.OperationalError:
+                # Fallback to settings table for backward compatibility
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    )
+                ''')
+                
+                cursor.execute('''
+                    INSERT OR REPLACE INTO settings (key, value) 
+                    VALUES ('report_template', ?)
+                ''', (template_type,))
+                
+                conn.commit()
+                print(f"Report template set to: {template_type} (fallback to settings table)")
+
+    def get_available_templates(self) -> List[Dict[str, str]]:
+        """
+        Get list of available report templates.
+        
+        Returns:
+            List of template dictionaries with id, name, and description
+        """
+        templates = [
+            {
+                'id': self.TEMPLATE_DEFAULT,
+                'name': 'Default (ReportLab)',
+                'description': 'Modern PDF report using ReportLab library',
+                'available': REPORTLAB_AVAILABLE
+            },
+            {
+                'id': self.TEMPLATE_LATEX_BW,
+                'name': 'LaTeX Black & White',
+                'description': 'Professional black and white report using LaTeX',
+                'available': self._is_latex_available()
+            },
+            {
+                'id': self.TEMPLATE_LATEX_COLOR,
+                'name': 'LaTeX Color',
+                'description': 'Colorful professional report using LaTeX',
+                'available': self._is_latex_available()
+            }
+        ]
+        return templates
+
+    def _is_latex_available(self) -> bool:
+        """Check if LaTeX is available for PDF generation."""
+        try:
+            subprocess.run(['pdflatex', '--version'], 
+                         capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
 
     def generate_reportlab_pdf(self, employee_id: int, year: int, month: int, output_path: str) -> str:
         """
@@ -269,30 +657,6 @@ class ReportManager:
             
         except Exception as e:
             raise Exception(f"Error generating PDF with reportlab: {str(e)}")
-
-    def generate_pdf_report(self, employee_id: int, year: int, month: int, output_path: str,
-                           delete_tex: bool = True, delete_aux_files: bool = True) -> str:
-        """
-        Generate a complete PDF report directly from database data.
-        Uses either reportlab (default) or LaTeX based on configuration.
-        
-        Args:
-            employee_id: Employee ID from the database
-            year: Year for the report  
-            month: Month for the report (1-12)
-            output_path: Path where the generated PDF should be saved (with .pdf extension)
-            delete_tex: Whether to delete the intermediate .tex file (LaTeX only)
-            delete_aux_files: Whether to delete auxiliary LaTeX files (LaTeX only)
-            
-        Returns:
-            Path to the generated PDF file
-        """
-        # Choose PDF generation method
-        if self.use_reportlab and REPORTLAB_AVAILABLE:
-            return self.generate_reportlab_pdf(employee_id, year, month, output_path)
-        else:
-            # Fallback to LaTeX method
-            return self._generate_latex_pdf(employee_id, year, month, output_path, delete_tex, delete_aux_files)
 
     def connect_db(self) -> sqlite3.Connection:
         """Create and return a database connection."""
@@ -626,119 +990,6 @@ class ReportManager:
             'total_break_minutes': total_break_minutes
         }
     
-    def generate_latex_content(self, employee_id: int, year: int, month: int) -> str:
-        """
-        Generate the complete LaTeX content with data populated.
-        
-        Args:
-            employee_id: Employee ID from the database
-            year: Year for the report
-            month: Month for the report (1-12)
-            
-        Returns:
-            Complete LaTeX content as string
-        """
-        # Read the template
-        with open(self.template_path, 'r', encoding='utf-8') as f:
-            template = f.read()
-        
-        # Get data
-        company_info = self.get_company_info()
-        employee_info = self.get_employee_info(employee_id)
-        time_records = self.get_time_records(employee_id, year, month)
-        summary = self.calculate_summary(time_records)
-        
-        month_name = calendar.month_name[month]
-        report_period = f"{month_name} {year}"
-        
-        # Replace DATA0 - Company Information
-        data0_replacement = f"""\\newcommand{{\\companyname}}{{{company_info['company_name']}}} % Company name
-\\newcommand{{\\companystreet}}{{{company_info['company_street']}}} % Street address
-\\newcommand{{\\companycity}}{{{company_info['company_city']}}} % City with ZIP
-\\newcommand{{\\companyphone}}{{{company_info['company_phone']}}} % Phone number
-\\newcommand{{\\companyemail}}{{{company_info['company_email']}}} % Email address
-\\newcommand{{\\companylogo}}{{{company_info['company_logo']}}} % Path to logo file"""
-        
-        # Replace DATA1 - Employee Information
-        data1_replacement = f"""\\newcommand{{\\employeename}}{{{employee_info['name']}}} % Employee name
-\\newcommand{{\\employeenumber}}{{{employee_info['employee_number']}}} % Personnel number
-\\newcommand{{\\reportperiod}}{{{report_period}}} % Reporting period"""
-        
-        # Replace DATA2 - Company Colors
-        data2_replacement = f"""\\definecolor{{primary}}{{HTML}}{{{company_info['primary_color']}}}  % Company primary color
-\\definecolor{{secondary}}{{HTML}}{{{company_info['secondary_color']}}} % Company secondary color
-\\definecolor{{tertiary}}{{HTML}}{{{company_info['tertiary_color']}}} % Company tertiary color"""
-        
-        # Replace DATA3 - Time Records Table Rows
-        data3_rows = []
-        for record in time_records:
-            vacation_text = "Yes" if record['is_vacation'] else "No"
-            sick_text = "Yes" if record['is_sick'] else "No"
-            
-            row = f"    {record['date']} & {record['start_time']} & {record['end_time']} & {record['total_minutes']} & {record['break_minutes']} & {vacation_text} & {sick_text} \\\\"
-            data3_rows.append(row)
-        
-        data3_replacement = "\n".join(data3_rows)
-        
-        # Replace DATA4 - Summary Row
-        total_minutes = int(summary['total_hours'] * 60)
-        vacation_text = f"{summary['vacation_days']} day{'s' if summary['vacation_days'] != 1 else ''}"
-        sick_text = f"{summary['sick_days']} day{'s' if summary['sick_days'] != 1 else ''}"
-        data4_replacement = f"    \\multicolumn{{3}}{{|l|}}{{\\textbf{{Total}}}} & {total_minutes} & {summary['total_break_minutes']} & {vacation_text} & {sick_text} \\\\"
-        
-        # Replace DATA5 - Summary Statistics
-        data5_replacement = f"""\\textbf{{Total Working Hours:}} & {summary['total_hours']:.2f} hours \\\\
-    \\textbf{{Vacation Days Used:}} & {summary['vacation_days']} day{'s' if summary['vacation_days'] != 1 else ''} \\\\
-    \\textbf{{Sick Leave Taken:}} & {summary['sick_days']} day{'s' if summary['sick_days'] != 1 else ''} \\\\[0.5cm]"""
-        
-        # Perform replacements using more precise matching
-        result = template
-        
-        # Replace DATA0
-        old_data0 = """% ___DATA0___
-\\newcommand{\\companyname}{My Company GmbH} % Company name
-\\newcommand{\\companystreet}{Businessstraße 123} % Street address
-\\newcommand{\\companycity}{10115 Berlin} % City with ZIP
-\\newcommand{\\companyphone}{+49-30-1234567} % Phone number
-\\newcommand{\\companyemail}{contact@mycompany.com} % Email address
-\\newcommand{\\companylogo}{company_logo.png} % Path to logo file"""
-        result = result.replace(old_data0, f"% ___DATA0___\n{data0_replacement}")
-        
-        # Replace DATA1
-        old_data1 = """% ___DATA1___
-\\newcommand{\\employeename}{Max Mustermann} % Employee name
-\\newcommand{\\employeenumber}{10042} % Personnel number
-\\newcommand{\\reportperiod}{February 2025} % Reporting period"""
-        result = result.replace(old_data1, f"% ___DATA1___\n{data1_replacement}")
-        
-        # Replace DATA2
-        old_data2 = """% ___DATA2___
-\\definecolor{primary}{HTML}{2B579A}  % Company primary color
-\\definecolor{secondary}{HTML}{00A4EF} % Company secondary color
-\\definecolor{tertiary}{HTML}{00A4EF} % Company tertiary color"""
-        result = result.replace(old_data2, f"% ___DATA2___\n{data2_replacement}")
-        
-        # Replace DATA3
-        old_data3 = """    % ___DATA3___
-    01.01.2023 & 09:00 & 17:00 & 480 & 30 & No & No \\\\
-    02.01.2023 & 08:30 & 16:45 & 495 & 45 & No & No \\\\
-    03.01.2023 & - & - & 0 & 0 & Yes & No \\\\"""
-        result = result.replace(old_data3, f"    % ___DATA3___\n{data3_replacement}")
-        
-        # Replace DATA4
-        old_data4 = """    % ___DATA4___
-    \\multicolumn{3}{|l|}{\\textbf{Total}} & 975 & 75 & 1 day & 0 days \\\\"""
-        result = result.replace(old_data4, f"    % ___DATA4___\n{data4_replacement}")
-        
-        # Replace DATA5
-        old_data5 = """    % ___DATA5___
-    \\textbf{Total Working Hours:} & 16.25 hours \\\\
-    \\textbf{Vacation Days Used:} & 1 day \\\\
-    \\textbf{Sick Leave Taken:} & 0 days \\\\[0.5cm]"""
-        result = result.replace(old_data5, f"    % ___DATA5___\n    {data5_replacement}")
-        
-        return result
-    
     def save_report(self, employee_id: int, year: int, month: int, output_path: str) -> None:
         """
         Generate and save the LaTeX report to a file.
@@ -749,7 +1000,18 @@ class ReportManager:
             month: Month for the report (1-12)
             output_path: Path where the generated LaTeX file should be saved
         """
-        latex_content = self.generate_latex_content(employee_id, year, month)
+        # Get template settings and path
+        settings = self.get_report_settings()
+        template_type = settings['template']
+        
+        if template_type == self.TEMPLATE_DEFAULT:
+            raise ValueError("Cannot save LaTeX report for default (ReportLab) template")
+        
+        template_path = self.get_template_path(template_type)
+        if not template_path or not os.path.exists(template_path):
+            raise FileNotFoundError(f"Template file not found: {template_path}")
+        
+        latex_content = self.generate_latex_content(employee_id, year, month, template_path)
         
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(latex_content)
@@ -880,6 +1142,20 @@ class ReportManager:
         print(f"PDF generated successfully: {pdf_path}")
         return pdf_path
 
+    def get_available_pdf_methods(self) -> Dict[str, bool]:
+        """
+        Check which PDF generation methods are available.
+        
+        Returns:
+            Dictionary with method names and availability status
+        """
+        methods = {
+            'reportlab': REPORTLAB_AVAILABLE,
+            'latex': self._is_latex_available()
+        }
+        return methods
+
+
 # Utility functions for UI integration
 def list_employees(db_path: str) -> List[Dict[str, any]]:
     """
@@ -891,7 +1167,7 @@ def list_employees(db_path: str) -> List[Dict[str, any]]:
     Returns:
         List of employee dictionaries
     """
-    report_manager = ReportManager(db_path, "")  # Template path not needed for this
+    report_manager = ReportManager(db_path)
     return report_manager.get_available_employees()
 
 def list_available_months(db_path: str, employee_id: int) -> List[Dict[str, any]]:
@@ -905,17 +1181,53 @@ def list_available_months(db_path: str, employee_id: int) -> List[Dict[str, any]
     Returns:
         List of month dictionaries
     """
-    report_manager = ReportManager(db_path, "")  # Template path not needed for this
+    report_manager = ReportManager(db_path)
     return report_manager.get_available_months_for_employee(employee_id)
 
-def generate_report(db_path: str, template_path: str, employee_id: int, 
-                   year: int, month: int, output_path: str) -> str:
+def list_available_templates(db_path: str) -> List[Dict[str, str]]:
     """
-    Generate a PDF report for the specified parameters.
+    Get list of available report templates for UI selection.
     
     Args:
         db_path: Path to the SQLite database file
-        template_path: Path to the LaTeX template file
+        
+    Returns:
+        List of template dictionaries
+    """
+    report_manager = ReportManager(db_path)
+    return report_manager.get_available_templates()
+
+def set_report_template(db_path: str, template_type: str) -> None:
+    """
+    Set the report template in database settings.
+    
+    Args:
+        db_path: Path to the SQLite database file
+        template_type: Type of template (default, latex_bw, latex_color)
+    """
+    report_manager = ReportManager(db_path)
+    report_manager.set_report_template(template_type)
+
+def get_report_template_from_db(db_path: str) -> str:
+    """
+    Get the current report template setting from database.
+    
+    Args:
+        db_path: Path to the SQLite database file
+        
+    Returns:
+        Current template type
+    """
+    report_manager = ReportManager(db_path)
+    settings = report_manager.get_report_settings()
+    return settings.get('template', ReportManager.TEMPLATE_DEFAULT)
+
+def generate_report(db_path: str, employee_id: int, year: int, month: int, output_path: str) -> str:
+    """
+    Generate a PDF report for the specified parameters using the template from database settings.
+    
+    Args:
+        db_path: Path to the SQLite database file
         employee_id: Employee ID from the database
         year: Year for the report
         month: Month for the report (1-12)
@@ -927,122 +1239,7 @@ def generate_report(db_path: str, template_path: str, employee_id: int,
     Raises:
         Various exceptions for missing files, compilation errors, etc.
     """
-    report_manager = ReportManager(db_path, template_path)
+    report_manager = ReportManager(db_path)
     return report_manager.generate_pdf_report(employee_id, year, month, output_path)
 
-    def _generate_latex_pdf(self, employee_id: int, year: int, month: int, output_path: str,
-                           delete_tex: bool = True, delete_aux_files: bool = True) -> str:
-        """
-        Generate PDF using LaTeX (original method).
-        """
-        # Ensure output path has .pdf extension
-        if not output_path.endswith('.pdf'):
-            output_path += '.pdf'
-        
-        # Create temporary .tex file
-        output_dir = os.path.dirname(output_path) or '.'
-        pdf_name = os.path.basename(output_path)
-        tex_name = pdf_name.replace('.pdf', '.tex')
-        temp_tex_path = os.path.join(output_dir, tex_name)
-        
-        try:
-            # Generate LaTeX content and save to temporary file
-            latex_content = self.generate_latex_content(employee_id, year, month)
-            
-            with open(temp_tex_path, 'w', encoding='utf-8') as f:
-                f.write(latex_content)
-            
-            print(f"Generated LaTeX file: {temp_tex_path}")
-            
-            # Compile to PDF
-            pdf_path = self.compile_tex_to_pdf(
-                tex_path=temp_tex_path,
-                output_dir=output_dir,
-                delete_tex=delete_tex,
-                delete_aux_files=delete_aux_files
-            )
-            
-            # Rename PDF to desired output path if different
-            final_pdf_path = os.path.join(output_dir, pdf_name)
-            if pdf_path != final_pdf_path:
-                shutil.move(pdf_path, final_pdf_path)
-                pdf_path = final_pdf_path
-            
-            return pdf_path
-            
-        except Exception as e:
-            # Clean up temporary tex file if something went wrong
-            if os.path.exists(temp_tex_path):
-                try:
-                    os.remove(temp_tex_path)
-                except OSError:
-                    pass
-            raise e
 
-    def get_available_pdf_methods(self) -> Dict[str, bool]:
-        """
-        Check which PDF generation methods are available.
-        
-        Returns:
-            Dictionary with method names and availability status
-        """
-        methods = {
-            'reportlab': REPORTLAB_AVAILABLE,
-            'latex': False
-        }
-        
-        # Check if LaTeX is available
-        try:
-            subprocess.run(['pdflatex', '--version'], 
-                         capture_output=True, check=True)
-            methods['latex'] = True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            methods['latex'] = False
-        
-        return methods
-
-# Example usage:
-if __name__ == "__main__":
-    # Configuration
-    db_path = "/home/zarathustra/repos/ChronoStaff/data/employee_time.db"
-    template_path = "resources/templates/time_report_1.tex"  # Updated to use your template
-    
-    # Initialize the ReportManager
-    report_manager = ReportManager(db_path, template_path)
-    
-    try:
-        # Example 1: List all employees
-        print("Available employees:")
-        employees = report_manager.get_available_employees()
-        for emp in employees:
-            print(f"  ID: {emp['id']}, Name: {emp['name']}, Employee #: {emp['employee_id']}")
-        
-        if employees:
-            # Example 2: List available months for first employee
-            first_emp_id = employees[0]['id']
-            print(f"\nAvailable months for {employees[0]['name']}:")
-            months = report_manager.get_available_months_for_employee(first_emp_id)
-            for month_info in months:
-                print(f"  {month_info['display_name']} ({month_info['record_count']} records)")
-            
-            if months:
-                # Example 3: Generate PDF report
-                month_info = months[0]  # Most recent month
-                output_file = f"report_{employees[0]['name'].replace(' ', '_')}_{month_info['year']}_{month_info['month']:02d}.pdf"
-                
-                print(f"\nGenerating PDF report: {output_file}")
-                pdf_path = report_manager.generate_pdf_report(
-                    employee_id=first_emp_id,
-                    year=month_info['year'],
-                    month=month_info['month'],
-                    output_path=output_file
-                )
-                print(f"Report generated successfully: {pdf_path}")
-        
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-        print("Make sure you have LaTeX installed (e.g., TeX Live or MiKTeX)")
-    except Exception as e:
-        print(f"Error generating report: {e}")
-        import traceback
-        traceback.print_exc()

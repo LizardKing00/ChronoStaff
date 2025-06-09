@@ -9,8 +9,8 @@ import calendar
 import json
 from calendar_popup import CalendarDialog
 from database_management import DatabaseManager, EmployeeManager, TimeTracker, SettingsManager
-from report_generation import ReportManager
 from date_management import DateManager
+from report_generation import ReportManager
 import os
 import threading
 import base64
@@ -39,13 +39,33 @@ class EmployeeTimeApp:
         self.employee_manager = EmployeeManager(self.db_manager)
         self.time_tracker = TimeTracker(self.db_manager)
         self.settings_manager = SettingsManager(self.db_manager)
+
+        # Set template to color LaTeX
+        self.settings_manager.save_report_settings({
+            'template': 'color',  # or 'black-white' or 'default'
+            'lang': 'en',
+            'default_output_path': './reports/'
+        })
         try:
-            self.report_manager = ReportManager(self.db_manager.db_name, self.template_path)
-            print("\nReport manager initialized successfully\n")
-        except Exception as e:
-            print(f"\nWarning: Could not initialize report manager: {e}\n")
+            self.report_manager = ReportManager(
+                db_path=self.db_manager.db_name,
+                templates_dir="resources/templates"
+            )
+            print("\nReport manager initialized successfully")
+            print(f"Database path: {self.db_manager.db_name}")
+            
+            # Get current template setting
+            current_settings = self.report_manager.get_report_settings()
+            print(f"Current template: {current_settings.get('template', 'default')}")
+            
+        except ImportError as e:
+            print(f"\nWarning: Could not import ReportManager: {e}")
+            print("Make sure report_generation.py is in your Python path")
             self.report_manager = None
-        
+        except Exception as e:
+            print(f"\nWarning: Could not initialize report manager: {e}")
+            self.report_manager = None   
+     
         self.employees_data = []
         # Current selections
         self.selected_employee = None
@@ -82,7 +102,6 @@ class EmployeeTimeApp:
         self.day_var.trace('w', self.on_date_component_change)
         self.month_var.trace('w', self.on_date_component_change)
         self.year_var.trace('w', self.on_date_component_change)
-        self.template_path = "/home/zarathustra/repos/ChronoStaff/resources/templates/time_report_1.tex" #TODO: Make this editable via settings
         self.report_generation_active = False
         self.last_pdf_path = None
 
@@ -904,6 +923,8 @@ class EmployeeTimeApp:
         self.default_sick_var = tk.IntVar(value=10)
         ttk.Entry(settings_grid, textvariable=self.default_sick_var, width=10).grid(row=1, column=3, padx=5, pady=2)
 
+        self.create_report_settings_frame(main_container)
+
         # Settings buttons
         settings_btn_frame = ttk.Frame(main_container)
         settings_btn_frame.pack(fill=tk.X, pady=(10, 0))
@@ -1381,6 +1402,263 @@ class EmployeeTimeApp:
     
         print("=== CREATE EMPLOYEE DETAILS WINDOW COMPLETED ===\n")
 
+    def create_report_settings_frame(self, parent):
+        """Create report settings section in settings tab - Fixed version"""
+
+        # Report Template Settings
+        report_template_frame = ttk.LabelFrame(parent, text="Report Generation")
+        report_template_frame.pack(fill=tk.X, pady=(0, 20))
+
+        # Template settings grid
+        template_grid = ttk.Frame(report_template_frame)
+        template_grid.pack(padx=10, pady=10, fill=tk.X)
+
+        # Template selection
+        ttk.Label(template_grid, text="Report Template:").grid(row=0, column=0, sticky='w', pady=2)
+
+        if self.report_manager:
+            # Get available templates and check their availability
+            templates = self.report_manager.get_available_templates()
+            template_choices = []
+            template_mapping = {}  # Map display names to template IDs
+
+            # Check system capabilities
+            available_methods = self.report_manager.get_available_pdf_methods()
+            latex_available = available_methods.get('latex', False)
+            reportlab_available = available_methods.get('reportlab', False)
+
+            for template in templates:
+                display_name = template['name']
+                template_id = template['id']
+                is_available = template['available']
+
+                # Add availability indicator
+                if template_id in ['latex_bw', 'latex_color'] and not latex_available:
+                    display_name += " (LaTeX required)"
+                    is_available = False
+                elif template_id == 'default' and not reportlab_available:
+                    display_name += " (ReportLab required)"
+                    is_available = False
+
+                template_choices.append(display_name)
+                template_mapping[display_name] = template_id
+
+            # Store mapping for later use
+            self.template_mapping = template_mapping
+
+            # Add installation info
+            info_text = "Available methods: "
+            if reportlab_available:
+                info_text += "ReportLab ✓ "
+            else:
+                info_text += "ReportLab ✗ "
+            if latex_available:
+                info_text += "LaTeX ✓"
+            else:
+                info_text += "LaTeX ✗"
+
+        else:
+            template_choices = ['Report Manager Not Available']
+            template_mapping = {}
+            info_text = "Report Manager not initialized"
+
+        self.template_mapping = template_mapping
+
+        self.template_display_var = tk.StringVar()
+        template_combo = ttk.Combobox(template_grid, textvariable=self.template_display_var, 
+                                     values=template_choices, state="readonly", width=35)
+        template_combo.grid(row=0, column=1, sticky="w", padx=(5, 20), pady=2)
+
+        # Apply template button
+        ttk.Button(template_grid, text="Apply Template", 
+                  command=self.apply_template_setting).grid(row=0, column=2, padx=5, pady=2)
+
+        # Installation info
+        ttk.Label(template_grid, text=info_text, font=('TkDefaultFont', 8), 
+                 foreground='darkgreen' if 'LaTeX ✓' in info_text else 'darkorange').grid(
+                     row=1, column=1, sticky='w', padx=5, pady=2)
+
+        # Set current template
+        if self.report_manager:
+            try:
+                current_settings = self.settings_manager.get_report_settings()
+                current_template = current_settings.get('template', 'color')  # Default from database
+
+                # Map database values back to template IDs
+                db_to_template_mapping = {
+                    'default': 'default',
+                    'black-white': 'latex_bw',
+                    'color': 'latex_color'
+                }
+
+                template_id = db_to_template_mapping.get(current_template, 'default')
+
+                # Map to display name
+                display_mapping = {
+                    'default': 'Default (ReportLab)',
+                    'latex_bw': 'LaTeX Black & White',
+                    'latex_color': 'LaTeX Color'
+                }
+
+                display_name = display_mapping.get(template_id, 'Default (ReportLab)')
+
+                # Find matching choice (might have availability suffix)
+                for choice in template_choices:
+                    if choice.startswith(display_name):
+                        self.template_display_var.set(choice)
+                        break
+
+            except Exception as e:
+                print(f"Error setting current template: {e}")
+                # Default to first available option
+                if template_choices:
+                    self.template_display_var.set(template_choices[0])
+
+        # Output path selection 
+        ttk.Label(template_grid, text="Output Path:").grid(row=2, column=0, sticky='w', pady=(10, 2))
+
+        output_path_frame = ttk.Frame(template_grid)
+        output_path_frame.grid(row=2, column=1, columnspan=2, sticky='ew', padx=(5, 0), pady=(10, 2))
+
+        # Get default from settings
+        default_output = './reports/'
+        if self.report_manager:
+            try:
+                current_settings = self.settings_manager.get_report_settings()
+                default_output = current_settings.get('default_output_path', './reports/')
+            except:
+                pass
+            
+        self.template_output_var = tk.StringVar(value=default_output)
+        ttk.Entry(output_path_frame, textvariable=self.template_output_var, width=30).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(output_path_frame, text="Browse", command=self.browse_template_output).pack(side=tk.LEFT, padx=(5, 0))
+
+        # LaTeX installation button (if needed)
+        if self.report_manager and not available_methods.get('latex', False):
+            ttk.Button(template_grid, text="LaTeX Installation Help", 
+                      command=self.show_latex_installation_help).grid(row=3, column=1, sticky='w', padx=5, pady=10)
+
+    def apply_template_setting(self):
+        """Apply the selected template setting - Fixed version"""
+        if not self.report_manager:
+            messagebox.showerror("Error", "Report manager not available")
+            return
+
+        try:
+            selected_display = self.template_display_var.get()
+            if not selected_display or selected_display not in self.template_mapping:
+                messagebox.showerror("Error", "Please select a valid template")
+                return
+
+            # Get the template ID from display name
+            template_id = self.template_mapping[selected_display]
+            print(f"Selected template ID: {template_id}")
+
+            # Check if LaTeX templates are available before setting
+            if template_id in ['latex_bw', 'latex_color']:
+                available_methods = self.report_manager.get_available_pdf_methods()
+                if not available_methods.get('latex', False):
+                    messagebox.showerror(
+                        "LaTeX Not Available", 
+                        "LaTeX templates require pdflatex to be installed.\n\n"
+                        "To install LaTeX:\n"
+                        "• Ubuntu/Debian: sudo apt-get install texlive-latex-base texlive-latex-extra\n"
+                        "• Fedora/CentOS: sudo dnf install texlive-scheme-basic texlive-latex\n"
+                        "• macOS: brew install mactex\n"
+                        "• Windows: Install MiKTeX or TeX Live\n\n"
+                        "Falling back to Default template."
+                    )
+                    # Set to default template instead
+                    template_id = 'default'
+                    self.template_display_var.set('Default (ReportLab)')
+
+            # Map template IDs to database values correctly
+            template_db_mapping = {
+                'default': 'default',
+                'latex_bw': 'black-white',  # This should match your database constraint
+                'latex_color': 'color'      # This should match your database constraint
+            }
+
+            db_template_value = template_db_mapping.get(template_id, 'color')
+            print(f"Database template value: {db_template_value}")
+
+            # Update via SettingsManager first (this uses the report_settings table)
+            success = self.settings_manager.save_report_settings({
+                'template': db_template_value,
+                'lang': 'en', 
+                'default_output_path': self.template_output_var.get() if hasattr(self, 'template_output_var') else './reports/'
+            })
+
+            if not success:
+                messagebox.showerror("Error", "Failed to save template setting to database")
+                return
+
+            # Verify the setting was saved
+            current_settings = self.settings_manager.get_report_settings()
+            print(f"Verified database setting: {current_settings}")
+
+            messagebox.showinfo("Success", f"Template changed to: {selected_display}")
+
+            # Show LaTeX installation info if needed
+            if template_id in ['latex_bw', 'latex_color']:
+                available_methods = self.report_manager.get_available_pdf_methods()
+                if available_methods.get('latex', False):
+                    messagebox.showinfo("LaTeX Available", 
+                                      f"LaTeX template '{selected_display}' is ready to use!")
+
+        except Exception as e:
+            print(f"Error in apply_template_setting: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Failed to change template: {e}")
+
+    def browse_template_output(self):
+        """Browse for template output directory"""
+        from tkinter import filedialog
+        
+        dir_path = filedialog.askdirectory(
+            title="Select Report Output Directory",
+            initialdir=self.template_output_var.get()
+        )
+        
+        if dir_path:
+            self.template_output_var.set(dir_path)
+
+    def show_latex_installation_help(self):
+        """Show LaTeX installation instructions"""
+        help_text = """
+        LaTeX Installation Instructions:
+
+        Ubuntu/Debian:
+          sudo apt-get update
+          sudo apt-get install texlive-latex-base texlive-latex-extra
+
+        Fedora/CentOS/RHEL:
+          sudo dnf install texlive-scheme-basic texlive-latex
+
+        macOS (with Homebrew):
+          brew install mactex
+
+        Windows:
+          Download and install MiKTeX or TeX Live from:
+          • MiKTeX: https://miktex.org/download
+          • TeX Live: https://www.tug.org/texlive/
+
+        After installation, restart the application to enable LaTeX templates.
+        """
+
+        # Create help window
+        help_window = tk.Toplevel(self.root)
+        help_window.title("LaTeX Installation Help")
+        help_window.geometry("500x400")
+        help_window.transient(self.root)
+
+        text_widget = tk.Text(help_window, wrap=tk.WORD, padx=10, pady=10)
+        text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        text_widget.insert('1.0', help_text)
+        text_widget.config(state=tk.DISABLED)
+
+        ttk.Button(help_window, text="Close", command=help_window.destroy).pack(pady=10)
   # =============================================================================
   # HELPER METHODS
   # =============================================================================
@@ -2197,7 +2475,6 @@ class EmployeeTimeApp:
         self.report_text.insert(tk.END, "Report cleared. Select an employee and generate a new report.")
         self.progress_label.config(text="Ready")
         self.last_pdf_path = None
-
 
   # =============================================================================
   #  TIME MANAGEMENT METHODS
