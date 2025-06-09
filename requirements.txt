@@ -1,2 +1,7 @@
+chardet==5.2.0
+holidays==0.74
 pillow==11.2.1
+python-dateutil==2.9.0.post0
+reportlab==4.4.1
+six==1.17.0
 tk==0.1.0
