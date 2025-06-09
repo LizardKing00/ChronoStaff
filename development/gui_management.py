@@ -127,7 +127,6 @@ class EmployeeTimeApp:
         self.create_employees_tab()
         self.create_time_tracking_tab()
         self.create_reports_tab()
-        self.create_export_tab()
         self.create_settings_tab()
         self.create_employee_details_tab()
     
@@ -679,85 +678,6 @@ class EmployeeTimeApp:
         # Store last generated PDF path
         self.last_pdf_path = None
     
-    def create_export_tab(self):
-        """Create data export tab"""
-        export_frame = ttk.Frame(self.notebook)
-        self.notebook.add(export_frame, text="Data Export")
-        
-        # Main container
-        main_container = ttk.Frame(export_frame)
-        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Header
-        ttk.Label(main_container, text="Data Export", style='Title.TLabel').pack(anchor='w', pady=(0, 20))
-        
-        # Export options frame
-        options_frame = ttk.LabelFrame(main_container, text="Export Options")
-        options_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        # Employee selection for export
-        emp_frame = ttk.Frame(options_frame)
-        emp_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        ttk.Label(emp_frame, text="Select Employees to Export:").pack(anchor='w', pady=(0, 5))
-        
-        # Listbox for employee selection
-        listbox_frame = ttk.Frame(emp_frame)
-        listbox_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        self.export_listbox = tk.Listbox(listbox_frame, selectmode=tk.MULTIPLE, height=8)
-        export_scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=self.export_listbox.yview)
-        self.export_listbox.configure(yscrollcommand=export_scrollbar.set)
-        
-        self.export_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        export_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Selection buttons
-        select_btn_frame = ttk.Frame(emp_frame)
-        select_btn_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        #ttk.Button(select_btn_frame, text="Select All", command=self.select_all_employees).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(select_btn_frame, text="Clear Selection", command=self.clear_employee_selection).pack(side=tk.LEFT, padx=5)
-        ttk.Button(select_btn_frame, text="Refresh List", command=self.not_yet_implemented).pack(side=tk.LEFT, padx=5)
-        
-        # Export settings
-        settings_frame = ttk.Frame(options_frame)
-        settings_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        self.include_time_records_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(settings_frame, text="Include Time Records", 
-                       variable=self.include_time_records_var).pack(anchor='w')
-        
-        self.include_inactive_export_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(settings_frame, text="Include Inactive Employees", 
-                       variable=self.include_inactive_export_var,
-                       command=self.not_yet_implemented).pack(anchor='w')
-        
-        # Export buttons
-        export_btn_frame = ttk.Frame(main_container)
-        export_btn_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        ttk.Button(export_btn_frame, text="Export Selected to JSON", 
-                  command=self.not_yet_implemented).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(export_btn_frame, text="Export All to JSON", 
-                  command=self.not_yet_implemented).pack(side=tk.LEFT, padx=10)
-        ttk.Button(export_btn_frame, text="Preview Export Data", 
-                  command=self.not_yet_implemented).pack(side=tk.LEFT, padx=10)
-        
-        # Export preview/status
-        preview_frame = ttk.LabelFrame(main_container, text="Export Preview/Status")
-        preview_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.export_text = tk.Text(preview_frame, wrap=tk.WORD, height=15, font=('Courier', 9))
-        export_text_scroll = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.export_text.yview)
-        self.export_text.configure(yscrollcommand=export_text_scroll.set)
-        
-        self.export_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-        export_text_scroll.pack(side=tk.RIGHT, fill=tk.Y, pady=10)
-        
-        # Initialize export employee list
-        #self.refresh_export_employee_list()
-
     def create_settings_tab(self):
         """Create settings tab"""
         settings_frame = ttk.Frame(self.notebook)
@@ -954,52 +874,6 @@ class EmployeeTimeApp:
 
         except Exception as e:
             print(f"Error in save_settings: {e}")
-
-    # def load_settings(self):
-    #     """Load settings from database using SettingsManager"""
-    #     try:
-    #         # Load all settings
-    #         all_settings = self.settings_manager.load_all_settings()
-
-    #         # Update general settings in GUI
-    #         general = all_settings.get('general', {})
-    #         self.std_hours_var.set(general.get('standard_hours_per_day', 8.0))
-    #         self.overtime_threshold_var.set(general.get('overtime_threshold', 200.0))
-    #         self.default_vacation_var.set(general.get('vacation_days_per_year', 30))
-    #         self.default_sick_var.set(general.get('sick_days_per_year', 10))
-
-    #         # Update company data in GUI
-    #         company = all_settings.get('company', {})
-    #         self.company_name_var.set(company.get('companyname', 'Meine Firma GmbH'))
-    #         self.company_street_var.set(company.get('companystreet', 'Geschäftsstraße 123'))
-    #         self.company_city_var.set(company.get('companycity', '10115 Berlin'))
-    #         self.company_phone_var.set(company.get('companyphone', '+49-30-1234567'))
-    #         self.company_email_var.set(company.get('companyemail', 'contact@meinefirma.com'))
-
-    #         # Update company colors
-    #         color1 = company.get('company_color_1', '#1E40AF')
-    #         color2 = company.get('company_color_2', '#3B82F6')
-    #         color3 = company.get('company_color_3', '#93C5FD')
-
-    #         self.company_color1_var.set(color1)
-    #         self.company_color2_var.set(color2)
-    #         self.company_color3_var.set(color3)
-
-    #         # Update color previews
-    #         self.color1_preview.config(bg=color1)
-    #         self.color2_preview.config(bg=color2)
-    #         self.color3_preview.config(bg=color3)
-
-    #         # Update report settings in GUI
-    #         report = all_settings.get('report', {})
-    #         self.template_lang_var.set(report.get('lang', 'en'))
-    #         self.template_style_var.set(report.get('template', 'color'))
-    #         self.output_path_var.set(report.get('default_output_path', './reports/'))
-
-    #         print("Settings loaded successfully!")
-
-    #     except Exception as e:
-    #         print(f"Error loading settings: {e}")
 
     def reset_settings(self):
         """Reset all settings to defaults using SettingsManager"""
@@ -1707,7 +1581,6 @@ class EmployeeTimeApp:
             self.progress_bar.stop()
             messagebox.showerror("Test Failed", f"Test failed: {e}")
 
-    # Update the load_settings method to include language
     def load_settings(self):
         """Load settings from database using SettingsManager - with language support"""
         try:
@@ -2052,13 +1925,6 @@ class EmployeeTimeApp:
             if 'conn' in locals():
                 conn.close()
 
-    def not_yet_implemented(self):#TODO: Remove!
-        """TODO Remove later, here just to patch up the missing functionality"""
-        messagebox.showinfo("Info", "functionality to be implemented....")
-
-    def update_period_display(self):
-        """Update the period display label"""
-        self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
 
     def update_view_period_if_needed(self):
         """Update view period if the selected date is in a different month/year"""
@@ -2067,7 +1933,7 @@ class EmployeeTimeApp:
             selected_date.year != self.date_manager.view_year):
             
             self.date_manager.set_view_period(selected_date.month, selected_date.year)
-            self.update_period_display()
+            self.period_display_var.set(f"Viewing: {self.date_manager.view_month:02d}/{self.date_manager.view_year}")
             if self.selected_employee:
                 self.load_time_records_data()
 
@@ -2117,20 +1983,6 @@ class EmployeeTimeApp:
         # If user didn't cancel the dialog
         if file_path:
             self.db_path_var.set(file_path)
-
-    def browse_output_path(self):
-        """Open directory dialog to select output path for generated PDFs"""
-        from tkinter import filedialog
-
-        # Open directory dialog
-        dir_path = filedialog.askdirectory(
-            title="Select Default Output Directory",
-            initialdir=self.output_path_var.get()  # Start with current path if any
-        )
-
-        # If user didn't cancel the dialog
-        if dir_path:
-            self.output_path_var.set(dir_path)
 
     def load_time_records_data(self):
         """Load time records data from database and populate the treeview - Fixed version"""
@@ -2761,34 +2613,6 @@ class EmployeeTimeApp:
         emp_names = [f"{emp[1]} ({emp[2]})" for emp in employees]
         self.emp_combo['values'] = emp_names
     
-    def update_report_employee_combo(self):
-        """Update the employee combo box with available employees - Uses ReportManager"""
-        if not self.report_manager:
-            self.report_text.delete(1.0, tk.END)
-            self.report_text.insert(tk.END, "⚠️  Report manager not initialized.\n")
-            return
-
-        try:
-            # Use ReportManager instead of employee_manager
-            employees = self.report_manager.get_available_employees()
-            employee_names = [f"{emp['name']} (ID: {emp['employee_id']})" for emp in employees]
-
-            self.report_emp_combo['values'] = employee_names
-            # Initialize employees_data as instance variable
-            self.employees_data = employees
-
-            if employee_names:
-                self.report_emp_combo.current(0)
-                self.on_report_employee_selected(None)
-            else:
-                self.report_text.delete(1.0, tk.END)
-                self.report_text.insert(tk.END, "No employees found in database.\n")
-
-        except Exception as e:
-            self.report_text.delete(1.0, tk.END)
-            self.report_text.insert(tk.END, f"Error loading employees: {e}\n")
-            self.employees_data = []   
-
     def add_employee_dialog(self):
         """Show dialog to add new employee with strict ID validation"""
         dialog = tk.Toplevel(self.root)
@@ -3268,11 +3092,6 @@ class EmployeeTimeApp:
             self.selected_employee = None
             self.selected_employee_id = None
 
-    def clear_employee_selection(self):
-        """Handle employee selection"""
-        self.selected_employee = None
-        self.selected_employee_id = None
-
     def delete_time_entry(self):
         """Delete selected time entry from database (single record only)"""
         selected_items = self.time_tree.selection()
@@ -3342,41 +3161,7 @@ class EmployeeTimeApp:
         finally:
             if 'conn' in locals():
                 conn.close()
-    
-    def generate_employee_report(self):
-        """Generate report for selected employee"""
-        if not self.selected_employee:
-            messagebox.showwarning("Warning", "Please select an employee first.")
-            return
-        
-        month = self.month_var.get()
-        year = self.year_var.get()
-        
-        summary = self.time_tracker.calculate_monthly_summary(self.selected_employee, year, month)
-        
-        report = f"Employee Report - {calendar.month_name[month]} {year}\n"
-        report += "=" * 50 + "\n"
-        report += f"Contract: {summary['hours_per_week']:.1f} hours/week\n"
-        report += f"Vacation Allowance: {summary['vacation_allowance']} days/year\n"
-        report += f"Sick Leave Allowance: {summary['sick_allowance']} days/year\n\n"
-        report += "MONTHLY SUMMARY:\n"
-        report += f"Total Work Hours: {summary['total_work_hours']:.2f}\n"
-        report += f"Total Overtime: {summary['total_overtime']:.2f}\n"
-        report += f"Vacation Days: {summary['vacation_days']}\n"
-        report += f"Sick Days: {summary['sick_days']}\n"
-        report += f"Work Days: {summary['work_days']}\n\n"
-        report += "YEAR-TO-DATE REMAINING:\n"
-        report += f"Vacation Days: {summary['vacation_days_remaining']}\n"
-        report += f"Sick Days: {summary['sick_days_remaining']}\n"
-        
-        self.report_text.delete(1.0, tk.END)
-        self.report_text.insert(1.0, report)
-    
-    def generate_summary_report(self):
-        """Generate summary report for all employees"""
-        self.report_text.delete(1.0, tk.END)
-        self.report_text.insert(1.0, "Summary report functionality to be implemented...")
-
+       
     def update_details_combo(self):
         """Update the employee combobox in details tab"""
         employees = self.employee_manager.get_all_employees(include_inactive=True)
