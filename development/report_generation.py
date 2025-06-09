@@ -6,6 +6,15 @@ import subprocess
 import os
 import tempfile
 import shutil
+try:
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
 
 class ReportManager:
     """
@@ -23,7 +32,268 @@ class ReportManager:
         """
         self.db_path = db_path
         self.template_path = template_path
+        self.use_reportlab = REPORTLAB_AVAILABLE 
+
+    def is_reportlab_available(self) -> bool:
+        """Check if reportlab is available for PDF generation."""
+        return REPORTLAB_AVAILABLE
+
+    def set_pdf_method(self, use_reportlab: bool = True):
+        """
+        Set which PDF generation method to use.
         
+        Args:
+            use_reportlab: If True, use reportlab. If False, use LaTeX.
+        """
+        if use_reportlab and not REPORTLAB_AVAILABLE:
+            raise ImportError("reportlab not available. Install with: pip install reportlab")
+        self.use_reportlab = use_reportlab
+
+    def generate_reportlab_pdf(self, employee_id: int, year: int, month: int, output_path: str) -> str:
+        """
+        Generate PDF report using reportlab instead of LaTeX.
+        
+        Args:
+            employee_id: Employee ID from the database
+            year: Year for the report
+            month: Month for the report (1-12)
+            output_path: Path where the PDF should be saved
+            
+        Returns:
+            Path to the generated PDF file
+            
+        Raises:
+            ImportError: If reportlab is not available
+            Exception: If PDF generation fails
+        """
+        if not REPORTLAB_AVAILABLE:
+            raise ImportError("reportlab library not installed. Install with: pip install reportlab")
+        
+        try:
+            # Get data for the report
+            company_info = self.get_company_info()
+            employee_info = self.get_employee_info(employee_id)
+            time_records = self.get_time_records(employee_id, year, month)
+            summary = self.calculate_summary(time_records)
+            
+            # Ensure output path has .pdf extension
+            if not output_path.endswith('.pdf'):
+                output_path += '.pdf'
+            
+            # Create PDF document
+            doc = SimpleDocTemplate(output_path, pagesize=A4,
+                                  rightMargin=72, leftMargin=72,
+                                  topMargin=72, bottomMargin=18)
+            
+            # Get styles
+            styles = getSampleStyleSheet()
+            story = []
+            
+            # Custom styles
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=20,
+                textColor=colors.HexColor('#' + company_info.get('primary_color', '1E40AF')),
+                spaceAfter=30,
+                alignment=1,  # Center alignment
+                fontName='Helvetica-Bold'
+            )
+            
+            subtitle_style = ParagraphStyle(
+                'CustomSubtitle',
+                parent=styles['Heading2'],
+                fontSize=14,
+                textColor=colors.HexColor('#' + company_info.get('secondary_color', '3B82F6')),
+                spaceAfter=20,
+                alignment=1,
+                fontName='Helvetica-Bold'
+            )
+            
+            heading_style = ParagraphStyle(
+                'CustomHeading',
+                parent=styles['Heading3'],
+                fontSize=12,
+                textColor=colors.HexColor('#' + company_info.get('primary_color', '1E40AF')),
+                spaceAfter=12,
+                spaceBefore=20,
+                fontName='Helvetica-Bold'
+            )
+            
+            # Title section
+            story.append(Paragraph("MONTHLY TIME REPORT", title_style))
+            story.append(Paragraph(f"{calendar.month_name[month]} {year}", subtitle_style))
+            story.append(Spacer(1, 20))
+            
+            # Company Information
+            story.append(Paragraph("Company Information", heading_style))
+            company_data = [
+                ['Company:', company_info.get('company_name', 'N/A')],
+                ['Address:', f"{company_info.get('company_street', 'N/A')}, {company_info.get('company_city', 'N/A')}"],
+                ['Phone:', company_info.get('company_phone', 'N/A')],
+                ['Email:', company_info.get('company_email', 'N/A')]
+            ]
+            
+            company_table = Table(company_data, colWidths=[1.5*inch, 4*inch])
+            company_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ]))
+            story.append(company_table)
+            story.append(Spacer(1, 20))
+            
+            # Employee Information
+            story.append(Paragraph("Employee Information", heading_style))
+            emp_data = [
+                ['Name:', employee_info.get('name', 'N/A')],
+                ['Employee ID:', employee_info.get('employee_number', 'N/A')],
+                ['Report Period:', f"{calendar.month_name[month]} {year}"]
+            ]
+            
+            emp_table = Table(emp_data, colWidths=[1.5*inch, 4*inch])
+            emp_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ]))
+            story.append(emp_table)
+            story.append(Spacer(1, 20))
+            
+            # Monthly Summary
+            story.append(Paragraph("Monthly Summary", heading_style))
+            summary_data = [
+                ['Metric', 'Value'],
+                ['Total Working Hours:', f"{summary.get('total_hours', 0):.2f} hours"],
+                ['Vacation Days Used:', f"{summary.get('vacation_days', 0)} day(s)"],
+                ['Sick Leave Taken:', f"{summary.get('sick_days', 0)} day(s)"],
+                ['Total Break Time:', f"{summary.get('total_break_minutes', 0)} minutes"]
+            ]
+            
+            primary_color = '#' + company_info.get('primary_color', '1E40AF')
+            summary_table = Table(summary_data, colWidths=[2.5*inch, 2*inch])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(primary_color)),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 1), (1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F0F8FF')),
+            ]))
+            story.append(summary_table)
+            story.append(Spacer(1, 20))
+            
+            # Detailed Time Records
+            if time_records and len(time_records) > 0:
+                story.append(Paragraph("Detailed Time Records", heading_style))
+                
+                # Create table headers
+                table_data = [['Date', 'Start', 'End', 'Hours', 'Break', 'Vacation', 'Sick']]
+                
+                # Add time records
+                for record in time_records:
+                    vacation = "Yes" if record.get('is_vacation', False) else "No"
+                    sick = "Yes" if record.get('is_sick', False) else "No"
+                    hours = f"{record.get('hours_worked', 0):.1f}h" if record.get('hours_worked', 0) > 0 else "-"
+                    break_time = f"{record.get('break_minutes', 0)}min" if record.get('break_minutes', 0) > 0 else "-"
+                    
+                    # Format date to be more readable
+                    date_str = record.get('date', '')
+                    if date_str and len(date_str) > 8:  # Assuming format like "01.01.2023"
+                        date_str = date_str[:5]  # Take just "01.01"
+                    
+                    table_data.append([
+                        date_str,
+                        record.get('start_time', '-'),
+                        record.get('end_time', '-'),
+                        hours,
+                        break_time,
+                        vacation,
+                        sick
+                    ])
+                
+                # Create table with appropriate column widths
+                col_widths = [0.8*inch, 0.7*inch, 0.7*inch, 0.6*inch, 0.6*inch, 0.7*inch, 0.5*inch]
+                records_table = Table(table_data, colWidths=col_widths)
+                records_table.setStyle(TableStyle([
+                    # Header row styling
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(primary_color)),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    
+                    # Data rows styling
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8F9FA')),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                    ('TOPPADDING', (0, 1), (-1, -1), 6),
+                    
+                    # Alternate row colors
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#F8F9FA'), colors.white]),
+                ]))
+                story.append(records_table)
+            else:
+                story.append(Paragraph("No time records found for this period.", styles['Normal']))
+            
+            # Footer
+            story.append(Spacer(1, 30))
+            footer_style = ParagraphStyle(
+                'Footer',
+                parent=styles['Normal'],
+                fontSize=8,
+                textColor=colors.grey,
+                alignment=1
+            )
+            story.append(Paragraph(f"Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
+            
+            # Build PDF
+            doc.build(story)
+            print(f"Reportlab PDF generated successfully: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            raise Exception(f"Error generating PDF with reportlab: {str(e)}")
+
+    def generate_pdf_report(self, employee_id: int, year: int, month: int, output_path: str,
+                           delete_tex: bool = True, delete_aux_files: bool = True) -> str:
+        """
+        Generate a complete PDF report directly from database data.
+        Uses either reportlab (default) or LaTeX based on configuration.
+        
+        Args:
+            employee_id: Employee ID from the database
+            year: Year for the report  
+            month: Month for the report (1-12)
+            output_path: Path where the generated PDF should be saved (with .pdf extension)
+            delete_tex: Whether to delete the intermediate .tex file (LaTeX only)
+            delete_aux_files: Whether to delete auxiliary LaTeX files (LaTeX only)
+            
+        Returns:
+            Path to the generated PDF file
+        """
+        # Choose PDF generation method
+        if self.use_reportlab and REPORTLAB_AVAILABLE:
+            return self.generate_reportlab_pdf(employee_id, year, month, output_path)
+        else:
+            # Fallback to LaTeX method
+            return self._generate_latex_pdf(employee_id, year, month, output_path, delete_tex, delete_aux_files)
+
     def connect_db(self) -> sqlite3.Connection:
         """Create and return a database connection."""
         conn = sqlite3.connect(self.db_path)
@@ -610,66 +880,6 @@ class ReportManager:
         print(f"PDF generated successfully: {pdf_path}")
         return pdf_path
 
-    def generate_pdf_report(self, employee_id: int, year: int, month: int, output_path: str,
-                           delete_tex: bool = True, delete_aux_files: bool = True) -> str:
-        """
-        Generate a complete PDF report directly from database data.
-        
-        Args:
-            employee_id: Employee ID from the database
-            year: Year for the report  
-            month: Month for the report (1-12)
-            output_path: Path where the generated PDF should be saved (with .pdf extension)
-            delete_tex: Whether to delete the intermediate .tex file
-            delete_aux_files: Whether to delete auxiliary LaTeX files
-            
-        Returns:
-            Path to the generated PDF file
-        """
-        # Ensure output path has .pdf extension
-        if not output_path.endswith('.pdf'):
-            output_path += '.pdf'
-        
-        # Create temporary .tex file
-        output_dir = os.path.dirname(output_path) or '.'
-        pdf_name = os.path.basename(output_path)
-        tex_name = pdf_name.replace('.pdf', '.tex')
-        temp_tex_path = os.path.join(output_dir, tex_name)
-        
-        try:
-            # Generate LaTeX content and save to temporary file
-            latex_content = self.generate_latex_content(employee_id, year, month)
-            
-            with open(temp_tex_path, 'w', encoding='utf-8') as f:
-                f.write(latex_content)
-            
-            print(f"Generated LaTeX file: {temp_tex_path}")
-            
-            # Compile to PDF
-            pdf_path = self.compile_tex_to_pdf(
-                tex_path=temp_tex_path,
-                output_dir=output_dir,
-                delete_tex=delete_tex,
-                delete_aux_files=delete_aux_files
-            )
-            
-            # Rename PDF to desired output path if different
-            final_pdf_path = os.path.join(output_dir, pdf_name)
-            if pdf_path != final_pdf_path:
-                shutil.move(pdf_path, final_pdf_path)
-                pdf_path = final_pdf_path
-            
-            return pdf_path
-            
-        except Exception as e:
-            # Clean up temporary tex file if something went wrong
-            if os.path.exists(temp_tex_path):
-                try:
-                    os.remove(temp_tex_path)
-                except OSError:
-                    pass
-            raise e
-
 # Utility functions for UI integration
 def list_employees(db_path: str) -> List[Dict[str, any]]:
     """
@@ -719,6 +929,77 @@ def generate_report(db_path: str, template_path: str, employee_id: int,
     """
     report_manager = ReportManager(db_path, template_path)
     return report_manager.generate_pdf_report(employee_id, year, month, output_path)
+
+    def _generate_latex_pdf(self, employee_id: int, year: int, month: int, output_path: str,
+                           delete_tex: bool = True, delete_aux_files: bool = True) -> str:
+        """
+        Generate PDF using LaTeX (original method).
+        """
+        # Ensure output path has .pdf extension
+        if not output_path.endswith('.pdf'):
+            output_path += '.pdf'
+        
+        # Create temporary .tex file
+        output_dir = os.path.dirname(output_path) or '.'
+        pdf_name = os.path.basename(output_path)
+        tex_name = pdf_name.replace('.pdf', '.tex')
+        temp_tex_path = os.path.join(output_dir, tex_name)
+        
+        try:
+            # Generate LaTeX content and save to temporary file
+            latex_content = self.generate_latex_content(employee_id, year, month)
+            
+            with open(temp_tex_path, 'w', encoding='utf-8') as f:
+                f.write(latex_content)
+            
+            print(f"Generated LaTeX file: {temp_tex_path}")
+            
+            # Compile to PDF
+            pdf_path = self.compile_tex_to_pdf(
+                tex_path=temp_tex_path,
+                output_dir=output_dir,
+                delete_tex=delete_tex,
+                delete_aux_files=delete_aux_files
+            )
+            
+            # Rename PDF to desired output path if different
+            final_pdf_path = os.path.join(output_dir, pdf_name)
+            if pdf_path != final_pdf_path:
+                shutil.move(pdf_path, final_pdf_path)
+                pdf_path = final_pdf_path
+            
+            return pdf_path
+            
+        except Exception as e:
+            # Clean up temporary tex file if something went wrong
+            if os.path.exists(temp_tex_path):
+                try:
+                    os.remove(temp_tex_path)
+                except OSError:
+                    pass
+            raise e
+
+    def get_available_pdf_methods(self) -> Dict[str, bool]:
+        """
+        Check which PDF generation methods are available.
+        
+        Returns:
+            Dictionary with method names and availability status
+        """
+        methods = {
+            'reportlab': REPORTLAB_AVAILABLE,
+            'latex': False
+        }
+        
+        # Check if LaTeX is available
+        try:
+            subprocess.run(['pdflatex', '--version'], 
+                         capture_output=True, check=True)
+            methods['latex'] = True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            methods['latex'] = False
+        
+        return methods
 
 # Example usage:
 if __name__ == "__main__":

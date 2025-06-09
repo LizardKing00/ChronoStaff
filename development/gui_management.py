@@ -12,6 +12,7 @@ from database_management import DatabaseManager, EmployeeManager, TimeTracker, S
 from report_generation import ReportManager
 from date_management import DateManager
 import os
+import threading
 import base64
 
 # =============================================================================
@@ -2109,23 +2110,34 @@ class EmployeeTimeApp:
             month_name = calendar.month_name[month]
             default_filename = f"TimeReport_{employee_name}_{month_name}_{year}.pdf"
 
+            # Use initialdir instead of initialname, and set up the path properly
+            default_dir = os.path.expanduser("~/Documents")  # Default to Documents folder
+
             # Ask user for save location
             from tkinter import filedialog
             file_path = filedialog.asksaveasfilename(
                 title="Save PDF Report",
                 defaultextension=".pdf",
                 filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
-                initialname=default_filename
+                initialdir=default_dir
             )
 
+            # If user selected a path but didn't specify filename, append default filename
             if file_path:
+                # Check if the selected path ends with .pdf, if not append the default filename
+                if not file_path.lower().endswith('.pdf'):
+                    # If user selected a directory or file without extension, append default filename
+                    if os.path.isdir(file_path):
+                        file_path = os.path.join(file_path, default_filename)
+                    else:
+                        file_path = file_path + '.pdf'
+
                 # Start PDF generation
                 self.progress_label.config(text="Generating PDF...")
                 self.progress_bar.start()
                 self.export_btn.config(state='disabled')
 
                 # Run in thread
-                import threading
                 thread = threading.Thread(target=self._export_pdf_worker, 
                                         args=(employee['id'], year, month, file_path))
                 thread.daemon = True
