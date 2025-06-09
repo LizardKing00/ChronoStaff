@@ -38,14 +38,14 @@ class EmployeeTimeApp:
         self.employee_manager = EmployeeManager(self.db_manager)
         self.time_tracker = TimeTracker(self.db_manager)
         self.settings_manager = SettingsManager(self.db_manager)
-
         try:
             self.report_manager = ReportManager(self.db_manager.db_name, self.template_path)
             print("\nReport manager initialized successfully\n")
         except Exception as e:
             print(f"\nWarning: Could not initialize report manager: {e}\n")
             self.report_manager = None
-
+        
+        self.employees_data = []
         # Current selections
         self.selected_employee = None
         self.selected_employee_id = None
@@ -1188,7 +1188,7 @@ class EmployeeTimeApp:
         self.update_details_combo()
 
     def create_employee_details_window(self):
-        """Create a standalone window to display details of the selected employee - FIXED VERSION"""
+        """Create a standalone window to display details of the selected employee"""
         print("=== CREATE EMPLOYEE DETAILS WINDOW STARTED ===")
         
         # Get selected employee from TreeView
@@ -1233,7 +1233,7 @@ class EmployeeTimeApp:
         print(f"Looking up employee in database with database ID: {database_id}")
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
-        # FIXED: Search by database ID (id column) instead of employee_id
+        #Search by database ID (id column) instead of employee_id
         cursor.execute("SELECT * FROM employees WHERE id = ?", (database_id,))
         employee = cursor.fetchone()
         print(f"Database query result: {employee}")
@@ -1314,7 +1314,7 @@ class EmployeeTimeApp:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
     
-        # FIXED: Use database_id (employee[0]) for time_records queries
+        # Use database_id (employee[0]) for time_records queries
         print(f"Querying vacation days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
@@ -1356,7 +1356,7 @@ class EmployeeTimeApp:
         current_month = datetime.now().month
         
         print("Calculating monthly and yearly summaries...")
-        # FIXED: Use database_id for summary calculations
+        # Use database_id for summary calculations
         monthly_summary = self.time_tracker.calculate_monthly_summary(database_id, current_year, current_month)
         yearly_summary = self.time_tracker.calculate_yearly_summary(database_id, current_year)
         
@@ -1897,12 +1897,17 @@ class EmployeeTimeApp:
     
     def on_report_employee_selected(self, event):
         """Handle employee selection to show available data months - Uses ReportManager"""
-        if not self.report_manager or not hasattr(self, 'employees_data'):
+        if not self.report_manager:
+            return
+
+        # Check if employees_data exists, if not initialize it
+        if not hasattr(self, 'employees_data') or not self.employees_data:
+            self.update_report_employee_combo()
             return
 
         try:
             selected_index = self.report_emp_combo.current()
-            if selected_index >= 0:
+            if selected_index >= 0 and selected_index < len(self.employees_data):
                 employee = self.employees_data[selected_index]
 
                 # Use ReportManager instead of direct database access
@@ -1937,38 +1942,51 @@ class EmployeeTimeApp:
         if not self.report_manager:
             messagebox.showerror("Error", "Report manager not initialized. Please check your configuration.")
             return
-        
+
         if self.report_generation_active:
             messagebox.showinfo("Info", "Report generation already in progress...")
             return
-        
+
         # Validate inputs
         if not self.report_emp_combo.get():
             messagebox.showerror("Error", "Please select an employee.")
             return
-        
+
+        # Check if employees_data exists and handle missing data
+        if not hasattr(self, 'employees_data') or not self.employees_data:
+            messagebox.showerror("Error", "Employee data not loaded. Please refresh the employee list.")
+            self.update_report_employee_combo()
+            return
+
         try:
             selected_index = self.report_emp_combo.current()
+
+            # Validate selected_index bounds
+            if selected_index < 0 or selected_index >= len(self.employees_data):
+                messagebox.showerror("Error", "Invalid employee selection. Please select a valid employee.")
+                return
+
             employee = self.employees_data[selected_index]
             year = self.report_year_var.get()
             month = self.report_month_var.get()
-            
+
             # Start progress indication
             self.report_generation_active = True
             self.progress_label.config(text="Generating report preview...")
             self.progress_bar.start()
             self.generate_btn.config(state='disabled')
-            
+
             # Run in thread to avoid blocking UI
+            import threading
             thread = threading.Thread(target=self._generate_report_worker, args=(employee['id'], year, month))
             thread.daemon = True
             thread.start()
-            
+
         except Exception as e:
             self.report_generation_active = False
             self.progress_bar.stop()
             self.generate_btn.config(state='normal')
-            messagebox.showerror("Error", f"Failed to start report generation: {e}")
+            messagebox.showerror("Error", f"Failed to start report generation: {e}")    
     
     def _generate_report_worker(self, employee_id, year, month):
         """Worker thread for report generation - Uses ReportManager"""
@@ -2058,50 +2076,64 @@ class EmployeeTimeApp:
         if not self.report_manager:
             messagebox.showerror("Error", "Report manager not initialized.")
             return
-        
+
         if self.report_generation_active:
             messagebox.showinfo("Info", "Please wait for report generation to complete.")
             return
-        
+
         # Validate inputs
         if not self.report_emp_combo.get():
             messagebox.showerror("Error", "Please select an employee and generate a report first.")
             return
-        
+
+        # Check if employees_data exists and handle missing data
+        if not hasattr(self, 'employees_data') or not self.employees_data:
+            messagebox.showerror("Error", "Employee data not loaded. Please refresh the employee list.")
+            self.update_report_employee_combo()
+            return
+
         try:
             selected_index = self.report_emp_combo.current()
+
+            # Validate selected_index bounds
+            if selected_index < 0 or selected_index >= len(self.employees_data):
+                messagebox.showerror("Error", "Invalid employee selection. Please select a valid employee.")
+                return
+
             employee = self.employees_data[selected_index]
             year = self.report_year_var.get()
             month = self.report_month_var.get()
-            
+
             # Get default filename
             employee_name = employee['name'].replace(' ', '_').replace('/', '_')
             month_name = calendar.month_name[month]
             default_filename = f"TimeReport_{employee_name}_{month_name}_{year}.pdf"
-            
+
             # Ask user for save location
+            from tkinter import filedialog
             file_path = filedialog.asksaveasfilename(
                 title="Save PDF Report",
                 defaultextension=".pdf",
                 filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
                 initialname=default_filename
             )
-            
+
             if file_path:
                 # Start PDF generation
                 self.progress_label.config(text="Generating PDF...")
                 self.progress_bar.start()
                 self.export_btn.config(state='disabled')
-                
+
                 # Run in thread
+                import threading
                 thread = threading.Thread(target=self._export_pdf_worker, 
                                         args=(employee['id'], year, month, file_path))
                 thread.daemon = True
                 thread.start()
-                
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to start PDF export: {e}")
-    
+
     def _export_pdf_worker(self, employee_id, year, month, file_path):
         """Worker thread for PDF export - Uses ReportManager"""
         try:
@@ -2221,11 +2253,33 @@ class EmployeeTimeApp:
         self.emp_combo['values'] = emp_names
     
     def update_report_employee_combo(self):
-        """Update report employee combobox"""
-        employees = self.employee_manager.get_all_employees()
-        emp_names = ["All Employees"] + [f"{emp[1]} ({emp[2]})" for emp in employees]
-        self.report_emp_combo['values'] = emp_names
-    
+        """Update the employee combo box with available employees - Uses ReportManager"""
+        if not self.report_manager:
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, "⚠️  Report manager not initialized.\n")
+            return
+
+        try:
+            # Use ReportManager instead of employee_manager
+            employees = self.report_manager.get_available_employees()
+            employee_names = [f"{emp['name']} (ID: {emp['employee_id']})" for emp in employees]
+
+            self.report_emp_combo['values'] = employee_names
+            # Initialize employees_data as instance variable
+            self.employees_data = employees
+
+            if employee_names:
+                self.report_emp_combo.current(0)
+                self.on_report_employee_selected(None)
+            else:
+                self.report_text.delete(1.0, tk.END)
+                self.report_text.insert(tk.END, "No employees found in database.\n")
+
+        except Exception as e:
+            self.report_text.delete(1.0, tk.END)
+            self.report_text.insert(tk.END, f"Error loading employees: {e}\n")
+            self.employees_data = []   
+
     def add_employee_dialog(self):
         """Show dialog to add new employee with strict ID validation"""
         dialog = tk.Toplevel(self.root)
@@ -2898,7 +2952,7 @@ class EmployeeTimeApp:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
 
-        # Get vacation days used this year - FIXED: use database_id (employee[0])
+        # Get vacation days used this year use database_id (employee[0])
         print(f"Querying vacation days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
@@ -2907,7 +2961,7 @@ class EmployeeTimeApp:
         vacation_used = cursor.fetchone()[0]
         print(f"Vacation days used: {vacation_used}")
 
-        # Get sick days used this year - FIXED: use database_id (employee[0])
+        # Get sick days used this year use database_id 
         print(f"Querying sick days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
@@ -2931,7 +2985,7 @@ class EmployeeTimeApp:
             foreground="green" if sick_remaining > 0 else "red"
         )
 
-        # Update statistics - FIXED: use database_id (employee[0])
+        # Update statistics
         print("Calculating statistics...")
         current_month = datetime.now().month
         monthly_summary = self.time_tracker.calculate_monthly_summary(database_id, current_year, current_month)
