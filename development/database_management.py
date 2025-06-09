@@ -99,7 +99,7 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS report_settings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 lang TEXT CHECK(lang IN ('de', 'en')) DEFAULT 'en',
-                template TEXT CHECK(template IN ('color', 'black-white')) DEFAULT 'color',
+                template TEXT CHECK(template IN ('default', 'color', 'black-white')) DEFAULT 'default',                
                 default_output_path TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
