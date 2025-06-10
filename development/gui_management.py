@@ -2662,20 +2662,177 @@ class EmployeeTimeApp:
             }
 
             # Collect report settings from GUI
-            report_settings = {
-                'lang': self.template_lang_var.get(),
-                'template': self.template_style_var.get(),
-                'default_output_path': self.output_path_var.get()
-            }
+            report_settings = {}
+
+            # Language setting - convert from display name to code
+            if hasattr(self, 'language_var'):
+                language_display = self.language_var.get()
+                if language_display == 'Deutsch':
+                    report_settings['lang'] = 'de'
+                else:
+                    report_settings['lang'] = 'en'
+            else:
+                report_settings['lang'] = 'en'  # Default
+
+            # Template setting - convert from GUI template ID to DATABASE template ID
+            if hasattr(self, 'template_display_var') and hasattr(self, 'template_mapping'):
+                template_display = self.template_display_var.get()
+                # Get the GUI template ID
+                gui_template_id = self.template_mapping.get(template_display, 'default')
+
+                # Map GUI template IDs to DATABASE template IDs
+                gui_to_db_template_mapping = {
+                    'default': 'default',           # ReportLab -> default
+                    'latex_bw': 'black-white',      # LaTeX B&W -> black-white  
+                    'latex_color': 'color'          # LaTeX Color -> color
+                }
+
+                # Convert to database expected value
+                db_template_id = gui_to_db_template_mapping.get(gui_template_id, 'default')
+                report_settings['template'] = db_template_id
+
+                print(f"Template conversion: {template_display} -> {gui_template_id} -> {db_template_id}")
+            else:
+                report_settings['template'] = 'color'  # Default
+
+            # Output path setting
+            if hasattr(self, 'template_output_var'):
+                report_settings['default_output_path'] = self.template_output_var.get()
+            else:
+                report_settings['default_output_path'] = './reports/'  # Default
+
+            print(f"Collected settings:")
+            print(f"  General: {general_settings}")
+            print(f"  Company: {company_data}")
+            print(f"  Report: {report_settings}")
 
             # Save all settings
             if self.settings_manager.save_all_settings(general_settings, company_data, report_settings):
                 print("Settings saved successfully!")
+                messagebox.showinfo("Success", "Settings saved successfully!")
             else:
                 print("Error saving settings!")
+                messagebox.showerror("Error", "Failed to save settings!")
 
         except Exception as e:
             print(f"Error in save_settings: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Error saving settings: {e}")
+
+    def load_settings(self):
+        """Load settings from database using SettingsManager - with corrected template mapping"""
+        try:
+            # Load all settings
+            all_settings = self.settings_manager.load_all_settings()
+
+            # Load general settings
+            general = all_settings.get('general', {})
+            if hasattr(self, 'std_hours_var'):
+                self.std_hours_var.set(general.get('standard_hours_per_day', 8.0))
+            if hasattr(self, 'overtime_threshold_var'):
+                self.overtime_threshold_var.set(general.get('overtime_threshold', 40.0))
+            if hasattr(self, 'default_vacation_var'):
+                self.default_vacation_var.set(general.get('vacation_days_per_year', 20))
+            if hasattr(self, 'default_sick_var'):
+                self.default_sick_var.set(general.get('sick_days_per_year', 10))
+
+            # Load company data
+            company = all_settings.get('company', {})
+            if hasattr(self, 'company_name_var'):
+                self.company_name_var.set(company.get('companyname', 'Meine Firma GmbH'))
+            if hasattr(self, 'company_street_var'):
+                self.company_street_var.set(company.get('companystreet', 'Geschäftsstraße 123'))
+            if hasattr(self, 'company_city_var'):
+                self.company_city_var.set(company.get('companycity', '10115 Berlin'))
+            if hasattr(self, 'company_phone_var'):
+                self.company_phone_var.set(company.get('companyphone', '+49-30-1234567'))
+            if hasattr(self, 'company_email_var'):
+                self.company_email_var.set(company.get('companyemail', 'contact@meinefirma.com'))
+
+            # Load and update company colors
+            if hasattr(self, 'company_color1_var'):
+                color1 = company.get('company_color_1', '#1E40AF')
+                self.company_color1_var.set(color1)
+                if hasattr(self, 'color1_preview'):
+                    try:
+                        self.color1_preview.config(bg=color1)
+                    except tk.TclError:
+                        pass
+
+            if hasattr(self, 'company_color2_var'):
+                color2 = company.get('company_color_2', '#3B82F6')
+                self.company_color2_var.set(color2)
+                if hasattr(self, 'color2_preview'):
+                    try:
+                        self.color2_preview.config(bg=color2)
+                    except tk.TclError:
+                        pass
+
+            if hasattr(self, 'company_color3_var'):
+                color3 = company.get('company_color_3', '#93C5FD')
+                self.company_color3_var.set(color3)
+                if hasattr(self, 'color3_preview'):
+                    try:
+                        self.color3_preview.config(bg=color3)
+                    except tk.TclError:
+                        pass
+
+            # Load report settings
+            report = all_settings.get('report', {})
+
+            # Set language using the correct variable name
+            if hasattr(self, 'language_var'):
+                current_lang = report.get('lang', 'en')
+                if current_lang == 'de':
+                    self.language_var.set('Deutsch')
+                else:
+                    self.language_var.set('English')
+
+            # Set template
+            if hasattr(self, 'template_display_var') and hasattr(self, 'template_mapping'):
+                current_db_template = report.get('template', 'default')
+
+                # Map DATABASE template ID to GUI template ID
+                db_to_gui_template_mapping = {
+                    'default': 'default',           # default -> ReportLab
+                    'black-white': 'latex_bw',      # black-white -> LaTeX B&W  
+                    'color': 'latex_color'          # color -> LaTeX Color
+                }
+
+                # Convert database value to GUI template ID
+                gui_template_id = db_to_gui_template_mapping.get(current_db_template, 'default')
+
+                # Map GUI template ID to display name
+                gui_template_to_display = {
+                    'default': 'Default (ReportLab)',
+                    'latex_bw': 'LaTeX Black & White',
+                    'latex_color': 'LaTeX Color'
+                }
+
+                target_display = gui_template_to_display.get(gui_template_id, 'Default (ReportLab)')
+
+                print(f"Template loading conversion: {current_db_template} -> {gui_template_id} -> {target_display}")
+
+                # Find matching choice in the combo box (with availability suffix)
+                for choice in self.template_mapping.keys():
+                    if choice.startswith(target_display):
+                        self.template_display_var.set(choice)
+                        print(f"Set template display to: {choice}")
+                        break
+                else:
+                    print(f"Warning: Could not find template choice starting with '{target_display}'")
+
+            # Set output path using the correct variable name
+            if hasattr(self, 'template_output_var'):
+                self.template_output_var.set(report.get('default_output_path', './reports/'))
+
+            print("Settings loaded successfully!")
+
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+            import traceback
+            traceback.print_exc()
 
     def reset_settings(self):
         """Reset all settings to defaults using SettingsManager"""
@@ -2705,56 +2862,6 @@ class EmployeeTimeApp:
         except Exception as e:
             print(f"Error in reset_settings: {e}")
             messagebox.showerror("Error", f"Failed to reset settings: {e}")
-
-    def load_settings(self):
-        """Load settings from database using SettingsManager - with language support"""
-        try:
-            # Load all settings
-            all_settings = self.settings_manager.load_all_settings()
-
-            # ... existing code for general and company settings ...
-
-            # Update report template settings (including language)
-            if self.report_manager:
-                try:
-                    current_settings = self.report_manager.get_report_settings()
-
-                    # Update language selection if UI exists
-                    if hasattr(self, 'language_var'):
-                        current_lang = current_settings.get('lang', 'en')
-                        if current_lang == 'de':
-                            self.language_var.set('Deutsch')
-                        else:
-                            self.language_var.set('English')
-
-                    # Update template selection if UI exists
-                    if hasattr(self, 'template_display_var'):
-                        current_template = current_settings.get('template', 'default')
-                        display_mapping = {
-                            'default': 'Default (ReportLab)',
-                            'black-white': 'LaTeX Black & White',
-                            'color': 'LaTeX Color'
-                        }
-                        display_name = display_mapping.get(current_template, 'Default (ReportLab)')
-
-                        # Find matching choice with availability suffix
-                        if hasattr(self, 'template_mapping'):
-                            for choice in self.template_mapping:
-                                if choice.startswith(display_name):
-                                    self.template_display_var.set(choice)
-                                    break
-                                
-                    # Update output path if UI exists
-                    if hasattr(self, 'template_output_var'):
-                        self.template_output_var.set(current_settings.get('default_output_path', './reports/'))
-
-                except Exception as e:
-                    print(f"Error loading report template settings: {e}")
-
-            print("Settings loaded successfully!")
-
-        except Exception as e:
-            print(f"Error loading settings: {e}")
 
     def browse_database(self):
         """Open file dialog to select database location"""
