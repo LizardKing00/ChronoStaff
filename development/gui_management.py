@@ -12,6 +12,15 @@ from report_generation import ReportManager
 import os
 import threading
 import base64
+try:
+    from ttkthemes import ThemedTk, ThemedStyle
+    THEMES_AVAILABLE = True
+    print("✅ ttkthemes loaded successfully")
+except ImportError:
+    print("❌ ttkthemes not found. Install with: pip install ttkthemes")
+    THEMES_AVAILABLE = False
+    ThemedTk = tk.Tk
+    ThemedStyle = ttk.Style
 
 # =============================================================================
 # MAIN APPLICATION GUI
@@ -26,6 +35,16 @@ class EmployeeTimeApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Chrono Staff")
+        
+        # Initialize theme system
+        if THEMES_AVAILABLE:
+            self.style = ThemedStyle(self.root)
+            self.current_theme = "arc"  # Default to light theme
+            self.style.set_theme(self.current_theme)
+        else:
+            self.style = ttk.Style()
+            self.current_theme = "default"
+        
         # Get the directory where this script is located (development folder)
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -34,16 +53,18 @@ class EmployeeTimeApp:
         if os.path.exists(icon_path):
             try:
                 icon = tk.PhotoImage(file=icon_path)
-                # Set it as the window icon.
                 self.root.iconphoto(True, icon)
             except Exception as e:
                 print(f"Warning: Could not load icon from {icon_path}: {e}")
         else:
             print(f"Warning: Icon file not found at {icon_path}")
+            
         self.root.geometry("1200x800")
+        
+        # MANAGERS
         self.date_manager = DateManager()
         self.setup_ui_variables()
-        self.date_var = tk.StringVar() #TODO remove?
+        self.date_var = tk.StringVar()
         self.date_display_var = tk.StringVar()        
 
         # Initialize database and managers
@@ -54,10 +75,11 @@ class EmployeeTimeApp:
 
         # Set template to color LaTeX
         self.settings_manager.save_report_settings({
-            'template': 'color',  # or 'black-white' or 'default'
+            'template': 'color',
             'lang': 'en',
             'default_output_path': './reports/'
         })
+        
         try:
             self.report_manager = ReportManager(
                 db_path=self.db_manager.db_name,
@@ -66,26 +88,23 @@ class EmployeeTimeApp:
             print("\nReport manager initialized successfully")
             print(f"Database path: {self.db_manager.db_name}")
             
-            # Get current template setting
             current_settings = self.report_manager.get_report_settings()
             print(f"Current template: {current_settings.get('template', 'default')}")
             
         except ImportError as e:
             print(f"\nWarning: Could not import ReportManager: {e}")
-            print("Make sure report_generation.py is in your Python path")
             self.report_manager = None
         except Exception as e:
             print(f"\nWarning: Could not initialize report manager: {e}")
             self.report_manager = None   
      
         self.employees_data = []
-        # Current selections
         self.selected_employee = None
         self.selected_employee_id = None
         self.current_month = datetime.now().month
         self.current_year = datetime.now().year
         
-        # Style configuration
+        # Style configuration and create widgets
         self.configure_styles()
         self.create_widgets()
 
@@ -94,26 +113,26 @@ class EmployeeTimeApp:
 
     def setup_ui_variables(self):
         """Initialize all UI variables"""
-        # Date component variables
         day, month, year = self.date_manager.get_date_components()
         self.day_var = tk.IntVar(value=day)
         self.month_var = tk.IntVar(value=month)
         self.year_var = tk.IntVar(value=year)
         
-        # Display variables
         self.date_display_var = tk.StringVar()
         self.period_display_var = tk.StringVar()
         
-        # Entry variables
         self.emp_var = tk.StringVar()
         self.hours_var = tk.DoubleVar()
         self.type_var = tk.StringVar(value="work")
         self.notes_var = tk.StringVar()
         
-        # Bind variable changes to update methods
+        self.theme_var = tk.StringVar(value="LIGHT")
+        self.theme_var.trace('w', self.on_theme_change)
+        
         self.day_var.trace('w', self.on_date_component_change)
         self.month_var.trace('w', self.on_date_component_change)
         self.year_var.trace('w', self.on_date_component_change)
+        
         self.report_generation_active = False
         self.last_pdf_path = None
 
@@ -529,6 +548,8 @@ class EmployeeTimeApp:
 
         ttk.Label(main_container, text="Application Settings", style='Title.TLabel').pack(anchor='w', pady=(0, 20))
 
+        self.create_theme_settings_section(main_container)
+
         # Database settings
         db_frame = ttk.LabelFrame(main_container, text="Database Settings")
         db_frame.pack(fill=tk.X, pady=(0, 20))
@@ -939,6 +960,65 @@ class EmployeeTimeApp:
         # Update preview when language changes
         self.language_var.trace('w', self.update_language_preview)
         self.update_language_preview()
+
+    def create_theme_settings_section(self, parent):
+        """Add this to your settings tab"""
+        # Theme Settings - Modern & Clean
+        theme_frame = ttk.LabelFrame(parent, text="Application Theme")
+        theme_frame.pack(fill=tk.X, pady=(0, 20))
+
+        theme_content = ttk.Frame(theme_frame)
+        theme_content.pack(padx=15, pady=15)
+
+        ttk.Label(theme_content, text="Theme:", font=('Arial', 10)).pack(side=tk.LEFT)
+
+        if THEMES_AVAILABLE:
+            # Theme selector
+            theme_combo = ttk.Combobox(
+                theme_content, 
+                textvariable=self.theme_var,
+                values=["LIGHT", "DARK"], 
+                state="readonly", 
+                width=12,
+                font=('Arial', 9)
+            )
+            theme_combo.pack(side=tk.LEFT, padx=(10, 15))
+            
+            # Apply button # TODO: remove
+            apply_btn = ttk.Button(
+                theme_content, 
+                text="Apply Theme",
+                command=lambda: self.apply_theme(self.theme_var.get()),
+                width=12
+            )
+            apply_btn.pack(side=tk.LEFT, padx=5)
+            
+            # Status
+            status_label = ttk.Label(
+                theme_content, 
+                text="✅ Themes Ready", 
+                foreground="green",
+                font=('Arial', 8)
+            )
+            status_label.pack(side=tk.LEFT, padx=(15, 0))
+            
+        else:
+            # Disabled state
+            disabled_combo = ttk.Combobox(
+                theme_content,
+                values=["DEFAULT"],
+                state="disabled",
+                width=12
+            )
+            disabled_combo.pack(side=tk.LEFT, padx=(10, 15))
+            
+            status_label = ttk.Label(
+                theme_content, 
+                text="❌ Install ttkthemes for theme support", 
+                foreground="red",
+                font=('Arial', 8)
+            )
+            status_label.pack(side=tk.LEFT, padx=(15, 0))
 
  # =============================================================================
  # EMPLOYEE MANAGEMENT METHODS
@@ -3146,6 +3226,38 @@ class EmployeeTimeApp:
         except Exception as e:
             print(f"Error in _get_selected_employee_db_id: {str(e)}")
             return None
+
+    def on_theme_change(self, *args):
+        """Handle theme change from dropdown"""
+        theme_choice = self.theme_var.get()
+        self.apply_theme(theme_choice)
+    
+    def apply_theme(self, theme_choice):
+        """Apply the selected theme"""
+        if not THEMES_AVAILABLE:
+            messagebox.showwarning("Themes Not Available", 
+                                 "Please install ttkthemes: pip install ttkthemes")
+            return
+        
+        try:
+            if theme_choice == "LIGHT":
+                new_theme = "arc"        # Modern flat light theme
+            elif theme_choice == "DARK":
+                new_theme = "equilux"    # Sleek dark theme
+            else:
+                new_theme = "arc"        # Default to light
+            
+            self.style.set_theme(new_theme)
+            self.current_theme = new_theme
+            
+            # Refresh custom styles after theme change
+            self.configure_styles()
+            
+            print(f"Applied theme: {theme_choice} ({new_theme})")
+            
+        except Exception as e:
+            print(f"Error applying theme: {e}")
+            messagebox.showerror("Theme Error", f"Could not apply theme: {e}")
 
 # =============================================================================
 # MAIN APPLICATION ENTRY POINT                                                  #TODO:  later edit
