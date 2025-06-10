@@ -15,7 +15,12 @@ from typing import Dict, List, Tuple
 # =============================================================================
 
 class DatabaseManager:
-    def __init__(self, db_name="data/employee_time.db"):
+    def __init__(self, db_name=None):
+        if db_name is None:
+            # Default to data/employee_time.db relative to this script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(script_dir)  # Go up one level from development to project root
+            db_name = os.path.join(project_root, "data", "employee_time.db") # ./../data/employee_time.db
         self.db_name = db_name
         self.init_database()
 

@@ -26,10 +26,20 @@ class EmployeeTimeApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Chrono Staff")
-        # Load the image file from disk.
-        icon = tk.PhotoImage(file="/home/zarathustra/repos/ChronoStaff/resources/pictures/main_logo.png") #TODO: edit to make not dependant on the username!
-        # Set it as the window icon.
-        self.root.iconphoto(True, icon)
+        # Get the directory where this script is located (development folder)
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Load the image file using relative path from script directory
+        icon_path = os.path.join(self.script_dir, "resources", "pictures", "main_logo.png")
+        if os.path.exists(icon_path):
+            try:
+                icon = tk.PhotoImage(file=icon_path)
+                # Set it as the window icon.
+                self.root.iconphoto(True, icon)
+            except Exception as e:
+                print(f"Warning: Could not load icon from {icon_path}: {e}")
+        else:
+            print(f"Warning: Icon file not found at {icon_path}")
         self.root.geometry("1200x800")
         self.date_manager = DateManager()
         self.setup_ui_variables()
@@ -51,7 +61,7 @@ class EmployeeTimeApp:
         try:
             self.report_manager = ReportManager(
                 db_path=self.db_manager.db_name,
-                templates_dir="resources/templates"
+                templates_dir = os.path.join(self.script_dir, "resources", "templates")
             )
             print("\nReport manager initialized successfully")
             print(f"Database path: {self.db_manager.db_name}")
