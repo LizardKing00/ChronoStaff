@@ -31,7 +31,7 @@ class ReportManager:
     LANG_ENGLISH = "en"
     LANG_GERMAN = "de"
         
-    def __init__(self, db_path: str, templates_dir: str = "resources/templates"):
+    def __init__(self, db_path: str, templates_dir: str = None):
         """
         Initialize the ReportManager.
         
@@ -39,8 +39,9 @@ class ReportManager:
             db_path: Path to the SQLite database file
             templates_dir: Directory containing LaTeX template files
         """
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.templates_dir = os.path.join(self.script_dir, "resources", "templates")
         self.db_path = db_path
-        self.templates_dir = templates_dir
         self.use_reportlab = REPORTLAB_AVAILABLE 
 
     def is_reportlab_available(self) -> bool:
