@@ -40,7 +40,7 @@ class ReportManager:
             templates_dir: Directory containing LaTeX template files
         """
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.templates_dir = os.path.join(script_dir, "resources", "templates")
+        self.templates_dir = os.path.join(self.script_dir, "resources", "templates")
         self.db_path = db_path
         self.use_reportlab = REPORTLAB_AVAILABLE 
 
