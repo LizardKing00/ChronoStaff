@@ -525,92 +525,92 @@ class EmployeeTimeApp:
         """Create settings tab with theme support - Fixed gray area issue"""
         settings_frame = ttk.Frame(self.notebook)
         self.notebook.add(settings_frame, text="Settings")
-    
+
         # Create scrollable frame for all settings - FIXED CANVAS WIDTH
         canvas = tk.Canvas(settings_frame)
         scrollbar = ttk.Scrollbar(settings_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
-    
+
         def configure_scroll_region(event):
             canvas.configure(scrollregion=canvas.bbox("all"))
-    
+
         def configure_canvas_width(event):
             # Constrain canvas window width to canvas width
             canvas_width = event.width
             canvas.itemconfig(canvas_window, width=canvas_width)
-    
+
         scrollable_frame.bind("<Configure>", configure_scroll_region)
         canvas.bind("<Configure>", configure_canvas_width)
-    
+
         # Store window reference for width configuration
         canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-    
+
         # Pack canvas and scrollbar
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-    
+
         # Main container - content will now fill the available width
         main_container = ttk.Frame(scrollable_frame)
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-    
+
         ttk.Label(main_container, text="Application Settings", style='Title.TLabel').pack(anchor='w', pady=(0, 20))
-    
+
         # Theme settings at the top
         self.create_theme_settings_section(main_container)
-    
+
         # Database settings
         db_frame = ttk.LabelFrame(main_container, text="Database Settings")
         db_frame.pack(fill=tk.X, pady=(0, 20))
-    
+
         ttk.Label(db_frame, text="Database Location:").pack(anchor='w', padx=10, pady=(10, 5))
         db_path_frame = ttk.Frame(db_frame)
         db_path_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-    
+
         self.db_path_var = tk.StringVar(value=self.db_manager.db_name)
         ttk.Entry(db_path_frame, textvariable=self.db_path_var, width=60).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(db_path_frame, text="Browse", command=self.browse_database).pack(side=tk.RIGHT, padx=(5, 0))
-    
+
         # Company Data Settings
         company_frame = ttk.LabelFrame(main_container, text="Company Information")
         company_frame.pack(fill=tk.X, pady=(0, 20))
-    
+
         # Company data grid
         company_grid = ttk.Frame(company_frame)
         company_grid.pack(padx=10, pady=10, fill=tk.X)
-    
+
         # Configure grid weights for proper resizing
         company_grid.columnconfigure(1, weight=1)
         company_grid.columnconfigure(3, weight=1)
-    
+
         # Company name
         ttk.Label(company_grid, text="Company Name:").grid(row=0, column=0, sticky='w', pady=2)
         self.company_name_var = tk.StringVar(value="Meine Firma GmbH")
         ttk.Entry(company_grid, textvariable=self.company_name_var, width=25).grid(row=0, column=1, sticky='ew', padx=(5, 20), pady=2)
-    
+
         # Company email
         ttk.Label(company_grid, text="Email:").grid(row=0, column=2, sticky='w', pady=2)
         self.company_email_var = tk.StringVar(value="contact@meinefirma.com")
         ttk.Entry(company_grid, textvariable=self.company_email_var, width=25).grid(row=0, column=3, sticky='ew', padx=5, pady=2)
-    
+
         # Company street
         ttk.Label(company_grid, text="Street Address:").grid(row=1, column=0, sticky='w', pady=2)
         self.company_street_var = tk.StringVar(value="Geschäftsstraße 123")
         ttk.Entry(company_grid, textvariable=self.company_street_var, width=25).grid(row=1, column=1, sticky='ew', padx=(5, 20), pady=2)
-    
+
         # Company phone
         ttk.Label(company_grid, text="Phone:").grid(row=1, column=2, sticky='w', pady=2)
         self.company_phone_var = tk.StringVar(value="+49-30-1234567")
         ttk.Entry(company_grid, textvariable=self.company_phone_var, width=25).grid(row=1, column=3, sticky='ew', padx=5, pady=2)
-    
+
         # Company city
         ttk.Label(company_grid, text="City:").grid(row=2, column=0, sticky='w', pady=2)
         self.company_city_var = tk.StringVar(value="10115 Berlin")
         ttk.Entry(company_grid, textvariable=self.company_city_var, width=25).grid(row=2, column=1, sticky='ew', padx=(5, 20), pady=2)
-    
+
         # Company colors section
         ttk.Label(company_grid, text="Brand Colors:", font=('TkDefaultFont', 9, 'bold')).grid(row=3, column=0, sticky='w', pady=(15, 5))
-    
+
         # Color 1
         ttk.Label(company_grid, text="Primary Color:").grid(row=4, column=0, sticky='w', pady=2)
         color1_frame = ttk.Frame(company_grid)
@@ -620,7 +620,7 @@ class EmployeeTimeApp:
         self.color1_preview = tk.Label(color1_frame, text="  ", bg="#1E40AF", width=3, relief="solid", borderwidth=1)
         self.color1_preview.pack(side=tk.LEFT, padx=(5, 0))
         ttk.Button(color1_frame, text="Pick", command=lambda: self.pick_color(self.company_color1_var, self.color1_preview)).pack(side=tk.LEFT, padx=(5, 0))
-    
+
         # Color 2
         ttk.Label(company_grid, text="Secondary Color:").grid(row=4, column=2, sticky='w', pady=2)
         color2_frame = ttk.Frame(company_grid)
@@ -630,7 +630,7 @@ class EmployeeTimeApp:
         self.color2_preview = tk.Label(color2_frame, text="  ", bg="#3B82F6", width=3, relief="solid", borderwidth=1)
         self.color2_preview.pack(side=tk.LEFT, padx=(5, 0))
         ttk.Button(color2_frame, text="Pick", command=lambda: self.pick_color(self.company_color2_var, self.color2_preview)).pack(side=tk.LEFT, padx=(5, 0))
-    
+
         # Color 3
         ttk.Label(company_grid, text="Accent Color:").grid(row=5, column=0, sticky='w', pady=2)
         color3_frame = ttk.Frame(company_grid)
@@ -640,37 +640,37 @@ class EmployeeTimeApp:
         self.color3_preview = tk.Label(color3_frame, text="  ", bg="#93C5FD", width=3, relief="solid", borderwidth=1)
         self.color3_preview.pack(side=tk.LEFT, padx=(5, 0))
         ttk.Button(color3_frame, text="Pick", command=lambda: self.pick_color(self.company_color3_var, self.color3_preview)).pack(side=tk.LEFT, padx=(5, 0))
-    
+
         # Default settings
         defaults_frame = ttk.LabelFrame(main_container, text="Default Settings")
         defaults_frame.pack(fill=tk.X, pady=(0, 20))
-    
+
         # Settings grid
         settings_grid = ttk.Frame(defaults_frame)
         settings_grid.pack(padx=10, pady=10)
-    
+
         ttk.Label(settings_grid, text="Standard Hours per Day:").grid(row=0, column=0, sticky='w', pady=2)
         self.std_hours_var = tk.DoubleVar(value=8.0)
         ttk.Entry(settings_grid, textvariable=self.std_hours_var, width=10).grid(row=0, column=1, padx=(5, 20), pady=2)
-    
+
         ttk.Label(settings_grid, text="Default Vacation Days:").grid(row=0, column=2, sticky='w', pady=2)
         self.default_vacation_var = tk.IntVar(value=20)
         ttk.Entry(settings_grid, textvariable=self.default_vacation_var, width=10).grid(row=0, column=3, padx=5, pady=2)
-    
+
         ttk.Label(settings_grid, text="Overtime Threshold (hours/week):").grid(row=1, column=0, sticky='w', pady=2)
         self.overtime_threshold_var = tk.DoubleVar(value=40.0)
         ttk.Entry(settings_grid, textvariable=self.overtime_threshold_var, width=10).grid(row=1, column=1, padx=(5, 20), pady=2)
-    
+
         ttk.Label(settings_grid, text="Default Sick Days:").grid(row=1, column=2, sticky='w', pady=2)
         self.default_sick_var = tk.IntVar(value=10)
         ttk.Entry(settings_grid, textvariable=self.default_sick_var, width=10).grid(row=1, column=3, padx=5, pady=2)
-    
+
         self.create_report_settings_frame(main_container)
-    
+
         # Settings buttons
         settings_btn_frame = ttk.Frame(main_container)
         settings_btn_frame.pack(fill=tk.X, pady=(10, 0))
-    
+
         ttk.Button(settings_btn_frame, text="Save Settings", command=self.save_settings).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Button(settings_btn_frame, text="Reset to Defaults", command=self.reset_settings).pack(side=tk.LEFT)
         ttk.Button(settings_btn_frame, text="Load Settings", command=self.load_settings).pack(side=tk.LEFT, padx=(10, 0))
@@ -1059,7 +1059,7 @@ class EmployeeTimeApp:
                     formatted_db_id,    # "1", "2", etc.
                     emp[1],    # name
                     emp[3] or "",    # position
-                    f"${emp[4]:.2f}" if emp[4] else "$0.00",  # hourly_rate
+                    f"€{emp[4]:.2f}" if emp[4] else "€0.00",  # hourly_rate
                     f"{emp[7]:.1f}" if emp[7] else "40.0",   # hours_per_week
                     emp[8] if emp[8] else "20",    # vacation_days_per_year
                     emp[5] or "",     # email
