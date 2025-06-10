@@ -1026,23 +1026,26 @@ class ReportManager:
         """
         Retrieve time records for a specific employee and month.
         Works with the updated schema that has multiple start/end time pairs.
-        
+        Now properly handles multi-period days by showing overall timespan and correct breaks.
+
         Args:
             employee_id: Employee ID from the database
             year: Year for the report
             month: Month for the report (1-12)
-            
+
         Returns:
             List of time record dictionaries
         """
+        print(f"DEBUG: Getting time records for employee {employee_id}, {year}-{month:02d}")
+
         with self.connect_db() as conn:
             cursor = conn.cursor()
-            
+
             # Get all days in the month
             days_in_month = calendar.monthrange(year, month)[1]
             start_date = f"{year}-{month:02d}-01"
             end_date = f"{year}-{month:02d}-{days_in_month:02d}"
-            
+
             cursor.execute("""
                 SELECT date, start_time_1, end_time_1, start_time_2, end_time_2, 
                        start_time_3, end_time_3, hours_worked, overtime_hours, 
@@ -1052,23 +1055,26 @@ class ReportManager:
                 AND date BETWEEN ? AND ?
                 ORDER BY date
             """, (employee_id, start_date, end_date))
-            
+
             records = cursor.fetchall()
-            
+            print(f"DEBUG: Found {len(records)} records in database")
+
             # Convert to list of dictionaries and fill missing dates
             time_data = []
             record_dict = {record['date']: record for record in records}
-            
+
             for day in range(1, days_in_month + 1):
                 date_str = f"{year}-{month:02d}-{day:02d}"
                 date_obj = datetime.strptime(date_str, "%Y-%m-%d")
                 weekday = date_obj.weekday()  # 0=Monday, 6=Sunday
-                
+
                 if date_str in record_dict:
                     record = record_dict[date_str]
-                    
+                    print(f"DEBUG: Processing record for {date_str}")
+
                     # Handle different record types
-                    if record['record_type'] == 'vacation':
+                    record_type = record['record_type'] if 'record_type' in record.keys() else 'work'
+                    if record_type == 'vacation':
                         time_data.append({
                             'date': date_obj.strftime("%d.%m.%Y"),
                             'start_time': '-',
@@ -1102,16 +1108,15 @@ class ReportManager:
                             'hours_worked': 0
                         })
                     else:
-                        # Regular work day - use the first start/end time pair for simplicity in reports
-                        start_time = self._format_time(record['start_time_1']) if record['start_time_1'] else '09:00'
-                        end_time = self._format_time(record['end_time_1']) if record['end_time_1'] else self._calculate_end_time(start_time, record['hours_worked'] or 0)
-                        
-                        # Calculate break minutes from hours
-                        break_hours = record['total_break_time'] or 0
-                        break_minutes = int(break_hours * 60)
-                        
-                        hours_worked = record['hours_worked'] or 0
-                        
+                        # Regular work day - handle multi-period correctly
+                        hours_worked = record['hours_worked'] if record['hours_worked'] else 0
+
+                        if hours_worked > 0:
+                            # Use the new multi-period calculation method
+                            start_time, end_time, break_minutes = self._calculate_multi_period_times(record)
+                        else:
+                            start_time, end_time, break_minutes = '-', '-', 0
+
                         time_data.append({
                             'date': date_obj.strftime("%d.%m.%Y"),
                             'start_time': start_time,
@@ -1136,9 +1141,10 @@ class ReportManager:
                             'hours_worked': 0
                         })
                     # Skip weekends (don't add to table)
-            
+
+            print(f"DEBUG: Returning {len(time_data)} time records for report")
             return time_data
-    
+
     def _format_time(self, time_str: str) -> str:
         """
         Format time string to HH:MM format.
@@ -1193,26 +1199,33 @@ class ReportManager:
     def calculate_summary(self, time_records: List[Dict]) -> Dict[str, float]:
         """
         Calculate summary statistics from time records.
-        
+
         Args:
             time_records: List of time record dictionaries
-            
+
         Returns:
             Dictionary containing summary statistics
         """
+        print("DEBUG: Calculating summary statistics")
+
         total_hours = sum(record['hours_worked'] for record in time_records)
         vacation_days = sum(1 for record in time_records if record['is_vacation'])
         sick_days = sum(1 for record in time_records if record['is_sick'])
         total_break_minutes = sum(record['break_minutes'] for record in time_records)
-        
+
+        print(f"DEBUG: Summary - Total hours: {total_hours:.2f}")
+        print(f"DEBUG: Summary - Vacation days: {vacation_days}")
+        print(f"DEBUG: Summary - Sick days: {sick_days}")
+        print(f"DEBUG: Summary - Total break minutes: {total_break_minutes}")
+
         return {
             'total_hours': total_hours,
             'vacation_days': vacation_days,
             'sick_days': sick_days,
             'total_break_minutes': total_break_minutes
         }
-    
-    
+
+
     def compile_tex_to_pdf(self, tex_path: str, output_dir: str = None, delete_tex: bool = False, 
                           delete_aux_files: bool = True) -> str:
         """
@@ -1368,3 +1381,119 @@ class ReportManager:
                 available_languages.append(lang)
         
         return available_languages
+
+    def _calculate_multi_period_times(self, record) -> Tuple[str, str, int]:
+        """
+        Calculate overall start time, end time, and break minutes for multi-period records.
+
+        Args:
+            record: Database record with multiple time periods
+
+        Returns:
+            Tuple of (start_time, end_time, break_minutes)
+        """
+        # Convert sqlite3.Row to dict if needed
+        if hasattr(record, 'keys'):
+            record_dict = {key: record[key] for key in record.keys()}
+        else:
+            record_dict = record
+
+        print(f"DEBUG: Calculating multi-period times for date {record_dict.get('date', 'unknown')}")
+
+        # Collect all valid time periods
+        periods = []
+        for i in range(1, 4):  # Check periods 1, 2, 3
+            start_col = f'start_time_{i}'
+            end_col = f'end_time_{i}'
+            start_time = record_dict.get(start_col)
+            end_time = record_dict.get(end_col)
+
+            if start_time and end_time and start_time != '-' and end_time != '-':
+                periods.append((start_time, end_time))
+                print(f"DEBUG: Found period {i}: {start_time} - {end_time}")
+
+        if not periods:
+            print("DEBUG: No valid periods found")
+            return '-', '-', 0
+
+        # Sort periods by start time to handle them in chronological order
+        periods.sort(key=lambda x: self._time_to_minutes(x[0]))
+        print(f"DEBUG: Sorted periods: {periods}")
+
+        # Overall start is the earliest start time
+        overall_start = periods[0][0]
+        # Overall end is the latest end time
+        overall_end = periods[-1][1]
+
+        print(f"DEBUG: Overall timespan: {overall_start} - {overall_end}")
+
+        # Calculate total working minutes from the database field
+        hours_worked = record_dict.get('hours_worked', 0) or 0
+        total_work_minutes = int(hours_worked * 60)
+        print(f"DEBUG: Total work hours from DB: {hours_worked:.2f} ({total_work_minutes} minutes)")
+
+        # Calculate total span in minutes
+        total_span_minutes = self._time_to_minutes(overall_end) - self._time_to_minutes(overall_start)
+        print(f"DEBUG: Total time span: {total_span_minutes} minutes")
+
+        # Calculate break time as the difference between span and work time
+        calculated_break_minutes = total_span_minutes - total_work_minutes
+
+        # Get actual break time from database
+        actual_break_hours = record_dict.get('total_break_time', 0) or 0
+        actual_break_minutes = int(actual_break_hours * 60)
+        print(f"DEBUG: Actual break time from DB: {actual_break_hours:.2f} hours ({actual_break_minutes} minutes)")
+        print(f"DEBUG: Calculated break time: {calculated_break_minutes} minutes")
+
+        # Use the larger of calculated break time or legal minimum
+        legal_minimum_break = self._get_legal_minimum_break(hours_worked)
+        print(f"DEBUG: Legal minimum break: {legal_minimum_break} minutes")
+
+        # Use actual break time if available, otherwise use calculated or legal minimum
+        if actual_break_minutes > 0:
+            final_break_minutes = actual_break_minutes
+            print(f"DEBUG: Using actual break time: {final_break_minutes} minutes")
+        else:
+            final_break_minutes = max(calculated_break_minutes, legal_minimum_break)
+            print(f"DEBUG: Using calculated/legal minimum break: {final_break_minutes} minutes")
+
+        return overall_start, overall_end, final_break_minutes    
+        
+    def _time_to_minutes(self, time_str: str) -> int:
+        """
+        Convert time string to minutes since midnight.
+
+        Args:
+            time_str: Time in HH:MM format
+
+        Returns:
+            Minutes since midnight
+        """
+        if not time_str or time_str == '-':
+            return 0
+
+        try:
+            parts = time_str.split(':')
+            hours = int(parts[0])
+            minutes = int(parts[1]) if len(parts) > 1 else 0
+            return hours * 60 + minutes
+        except (ValueError, IndexError):
+            print(f"DEBUG: Error parsing time '{time_str}', returning 0")
+            return 0
+
+    def _get_legal_minimum_break(self, hours_worked: float) -> int:
+        """
+        Get legal minimum break time based on hours worked (German labor law).
+        
+        Args:
+            hours_worked: Number of hours worked
+            
+        Returns:
+            Minimum break time in minutes
+        """
+        if hours_worked > 9:
+            return 45  # 45 minutes for >9 hours
+        elif hours_worked > 6:
+            return 30  # 30 minutes for 6-9 hours
+        else:
+            return 0   # No mandatory break for ≤6 hours
