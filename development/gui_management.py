@@ -2425,30 +2425,30 @@ class EmployeeTimeApp:
 
             # Create detailed report preview
             report_content = f"""
-    MONTHLY TIME REPORT PREVIEW
-    {'=' * 50}
+        MONTHLY TIME REPORT PREVIEW
+        {'=' * 50}
 
-    Company: {company_info['company_name']}
-    Address: {company_info['company_street']}, {company_info['company_city']}
-    Phone: {company_info['company_phone']}
-    Email: {company_info['company_email']}
+        Company: {company_info['company_name']}
+        Address: {company_info['company_street']}, {company_info['company_city']}
+        Phone: {company_info['company_phone']}
+        Email: {company_info['company_email']}
 
-    Employee Information:
-      Name: {employee_info['name']}
-      Employee ID: {employee_info['employee_number']}
-      Report Period: {month_name} {year}
+        Employee Information:
+          Name: {employee_info['name']}
+          Employee ID: {employee_info['employee_number']}
+          Report Period: {month_name} {year}
 
-    SUMMARY:
-      Total Working Hours: {summary['total_hours']:.2f} hours
-      Vacation Days Used: {summary['vacation_days']} day(s)
-      Sick Leave Taken: {summary['sick_days']} day(s)
-      Total Break Time: {summary['total_break_minutes']} minutes
+        SUMMARY:
+          Total Working Hours: {summary['total_hours']:.2f} hours
+          Vacation Days Used: {summary['vacation_days']} day(s)
+          Sick Leave Taken: {summary['sick_days']} day(s)
+          Total Break Time: {summary['total_break_minutes']} minutes
 
-    DETAILED TIME RECORDS:
-    {'─' * 80}
-    {'Date':<12} {'Start':<8} {'End':<8} {'Hours':<8} {'Break':<8} {'Vacation':<10} {'Sick':<6}
-    {'─' * 80}
-    """
+        DETAILED TIME RECORDS:
+        {'─' * 80}
+        {'Date':<12} {'Start':<8} {'End':<8} {'Hours':<8} {'Break':<8} {'Vacation':<10} {'Sick':<6}
+        {'─' * 80}
+        """
 
             for record in time_records:
                 vacation = "Yes" if record['is_vacation'] else "No"
@@ -2456,20 +2456,20 @@ class EmployeeTimeApp:
                 hours = f"{record['hours_worked']:.1f}h" if record['hours_worked'] > 0 else "-"
                 break_time = f"{record['break_minutes']}min" if record['break_minutes'] > 0 else "-"
 
-                report_content += f"{record['date']:<12} {record['start_time']:<8} {record['end_time']:<8} {hours:<8} {break_time:<8} {vacation:<10} {sick:<6}\n"
+                report_content += f"\t\t{record['date']:<12} {record['start_time']:<8} {record['end_time']:<8} {hours:<8} {break_time:<8} {vacation:<10} {sick:<6}\n"
 
-            report_content += f"\n{'─' * 80}\n"
-            report_content += f"Total: {summary['total_hours']:.2f} hours worked this month\n"
+            report_content += f"\n\t{'─' * 80}\n"
+            report_content += f"\tTotal: {summary['total_hours']:.2f} hours worked this month\n"
 
             if summary['vacation_days'] > 0 or summary['sick_days'] > 0:
-                report_content += f"\nTime Off Summary:\n"
+                report_content += f"\n\t\tTime Off Summary:\n"
                 if summary['vacation_days'] > 0:
-                    report_content += f"  • Vacation days: {summary['vacation_days']}\n"
+                    report_content += f"\t\t  • Vacation days: {summary['vacation_days']}\n"
                 if summary['sick_days'] > 0:
-                    report_content += f"  • Sick days: {summary['sick_days']}\n"
+                    report_content += f"\t\t  • Sick days: {summary['sick_days']}\n"
 
-            report_content += f"\n📄 To generate PDF: Click 'Export PDF' button\n"
-            report_content += f"📊 Report generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            report_content += f"\n\t📄 To generate PDF: Click 'Export PDF' button\n"
+            report_content += f"\t📊 Report generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
 
             # Update UI on main thread
             self.root.after(0, self._report_generation_completed, report_content, None)
