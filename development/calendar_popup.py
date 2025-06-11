@@ -10,6 +10,12 @@ except ImportError:
     HOLIDAYS_AVAILABLE = False
     print("Warning: 'holidays' package not found. Install with: pip install holidays")
 
+try:
+    from ttkthemes import ThemedStyle
+    THEMES_AVAILABLE = True
+except ImportError:
+    THEMES_AVAILABLE = False
+
 # =============================================================================
 # CALENDAR POPUP WIDGET WITH GERMAN HOLIDAYS
 # =============================================================================
@@ -30,70 +36,164 @@ class CalendarDialog:
         # Create popup window
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Select Date")
-        self.dialog.geometry("300x320")
+        self.dialog.geometry("350x320")  # Made wider to fit all 7 days
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
-        # Modern styling
-        self.style = ttk.Style()
-        self.style.configure('Calendar.TFrame', background='white')
+        # Get the main app's style or create new one, this ensures compatibility with ttkthemes
+        if hasattr(parent, 'style') and THEMES_AVAILABLE:
+            self.style = parent.style
+        else:
+            self.style = ttk.Style()
+        
+        # Configure custom styles that work with themes
+        self._configure_calendar_styles()
+        
+        # Center the dialog
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() // 2) - (350 // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (320 // 2)
+        self.dialog.geometry(f"350x320+{x}+{y}")
+        
+        self.create_calendar()
+    
+    def _configure_calendar_styles(self):
+        """Configure calendar-specific styles that work with ttkthemes"""
+        
+        # Get current theme colors if available
+        try:
+            # Try to get theme-appropriate colors
+            bg_color = self.style.lookup('TFrame', 'background') or 'white'
+            fg_color = self.style.lookup('TLabel', 'foreground') or '#333333'
+        except:
+            bg_color = 'white'
+            fg_color = '#333333'
+        
+        # Calendar frame styling
+        self.style.configure('Calendar.TFrame', background=bg_color)
+        
+        # Header styling
         self.style.configure('Calendar.Header.TLabel', 
                            font=('Segoe UI', 9, 'bold'), 
-                           foreground='#333333',
-                           background='white')
+                           foreground=fg_color,
+                           background=bg_color)
+        
+        # Regular day button
+        try:
+            # Try to get theme's foreground color
+            button_fg = self.style.lookup('TButton', 'foreground') or '#333333'
+        except:
+            button_fg = '#333333'
+            
         self.style.configure('Calendar.Day.TButton', 
-                           font=('Segoe UI', 8), 
-                           foreground='#333333',
-                           borderwidth=1)
-        self.style.map('Calendar.Day.TButton',
-                      foreground=[('active', 'white'), ('pressed', 'white')],
-                      background=[('active', '#4a90e2'), ('pressed', '#3a7bc8')])
+                           font=('Segoe UI', 8),
+                           foreground=button_fg,
+                           padding=(2, 2))
         
-        # Red styling for Sundays and holidays
-        self.style.configure('Calendar.Holiday.TButton', 
-                           font=('Segoe UI', 8, 'bold'), 
-                           foreground='white',
-                           background='#e74c3c')
-        self.style.map('Calendar.Holiday.TButton',
-                      foreground=[('active', 'white'), ('pressed', 'white')],
-                      background=[('active', '#c0392b'), ('pressed', '#a93226')])
-        
-        self.style.configure('Calendar.Today.TButton', 
-                           font=('Segoe UI', 8, 'bold'), 
-                           foreground='white',
-                           background='#4a90e2')
-        self.style.configure('Calendar.Selected.TButton', 
-                           font=('Segoe UI', 8, 'bold'), 
-                           foreground='white',
-                           background='#3a7bc8')
-        
-        # Today + Holiday combination
-        self.style.configure('Calendar.TodayHoliday.TButton', 
-                           font=('Segoe UI', 8, 'bold'), 
-                           foreground='white',
-                           background='#8e44ad')
-        
-        # Selected + Holiday combination
-        self.style.configure('Calendar.SelectedHoliday.TButton', 
-                           font=('Segoe UI', 8, 'bold'), 
-                           foreground='white',
-                           background='#9b59b6')
-        
+        # Navigation buttons
         self.style.configure('Calendar.Nav.TButton',
                            font=('Segoe UI', 9),
                            width=3)
+        
+        # Action buttons
         self.style.configure('Calendar.Action.TButton',
                            font=('Segoe UI', 9),
                            padding=5)
         
-        # Center the dialog
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - (300 // 2)
-        y = (self.dialog.winfo_screenheight() // 2) - (320 // 2)
-        self.dialog.geometry(f"300x320+{x}+{y}")
+        # Create a custom button class for special days that bypasses theme styling
+        self.create_custom_button_styles()
+    
+    def create_custom_button_styles(self):
+        """Create custom button styles for special calendar days"""
         
-        self.create_calendar()
+        # Holiday/Sunday style (red)
+        self.style.configure('Calendar.Holiday.TButton', 
+                           font=('Segoe UI', 8, 'bold'),
+                           foreground='white',
+                           background='#e74c3c',
+                           borderwidth=1,
+                           relief='raised')
+        self.style.map('Calendar.Holiday.TButton',
+                      foreground=[('active', 'white'), ('pressed', 'white')],
+                      background=[('active', '#c0392b'), ('pressed', '#a93226')])
+        
+        # Saturday style (orange)
+        self.style.configure('Calendar.Saturday.TButton', 
+                           font=('Segoe UI', 8, 'bold'),
+                           foreground='white',
+                           background='#f39c12',
+                           borderwidth=1,
+                           relief='raised')
+        self.style.map('Calendar.Saturday.TButton',
+                      foreground=[('active', 'white'), ('pressed', 'white')],
+                      background=[('active', '#e67e22'), ('pressed', '#d68910')])
+        
+        # Today style (blue)
+        self.style.configure('Calendar.Today.TButton', 
+                           font=('Segoe UI', 8, 'bold'),
+                           foreground='white',
+                           background='#4a90e2',
+                           borderwidth=1,
+                           relief='raised')
+        self.style.map('Calendar.Today.TButton',
+                      foreground=[('active', 'white'), ('pressed', 'white')],
+                      background=[('active', '#3a7bc8'), ('pressed', '#2e6aa3')])
+        
+        # Selected style (darker blue)
+        self.style.configure('Calendar.Selected.TButton', 
+                           font=('Segoe UI', 8, 'bold'),
+                           foreground='white',
+                           background='#3a7bc8',
+                           borderwidth=1,
+                           relief='raised')
+        self.style.map('Calendar.Selected.TButton',
+                      foreground=[('active', 'white'), ('pressed', 'white')],
+                      background=[('active', '#2e6aa3'), ('pressed', '#255a8a')])
+        
+        # Today + Holiday combination (purple)
+        self.style.configure('Calendar.TodayHoliday.TButton', 
+                           font=('Segoe UI', 8, 'bold'),
+                           foreground='white',
+                           background='#8e44ad',
+                           borderwidth=1,
+                           relief='raised')
+        self.style.map('Calendar.TodayHoliday.TButton',
+                      foreground=[('active', 'white'), ('pressed', 'white')],
+                      background=[('active', '#7d3c98'), ('pressed', '#6c3483')])
+        
+        # Today + Saturday combination (blue-orange)
+        self.style.configure('Calendar.TodaySaturday.TButton', 
+                           font=('Segoe UI', 8, 'bold'),
+                           foreground='white',
+                           background='#e67e22',
+                           borderwidth=1,
+                           relief='raised')
+        self.style.map('Calendar.TodaySaturday.TButton',
+                      foreground=[('active', 'white'), ('pressed', 'white')],
+                      background=[('active', '#d68910'), ('pressed', '#ca7a00')])
+        
+        # Selected + Holiday combination (lighter purple)
+        self.style.configure('Calendar.SelectedHoliday.TButton', 
+                           font=('Segoe UI', 8, 'bold'),
+                           foreground='white',
+                           background='#9b59b6',
+                           borderwidth=1,
+                           relief='raised')
+        self.style.map('Calendar.SelectedHoliday.TButton',
+                      foreground=[('active', 'white'), ('pressed', 'white')],
+                      background=[('active', '#8e44ad'), ('pressed', '#7d3c98')])
+        
+        # Selected + Saturday combination (darker orange)
+        self.style.configure('Calendar.SelectedSaturday.TButton', 
+                           font=('Segoe UI', 8, 'bold'),
+                           foreground='white',
+                           background='#d68910',
+                           borderwidth=1,
+                           relief='raised')
+        self.style.map('Calendar.SelectedSaturday.TButton',
+                      foreground=[('active', 'white'), ('pressed', 'white')],
+                      background=[('active', '#ca7a00'), ('pressed', '#b8690a')])
     
     def _get_fallback_holidays(self):
         """Fallback German holidays if holidays package is not available"""
@@ -121,6 +221,10 @@ class CalendarDialog:
         """Check if a date is Sunday (weekday 6)"""
         return date_obj.weekday() == 6
     
+    def is_saturday(self, date_obj):
+        """Check if a date is Saturday (weekday 5)"""
+        return date_obj.weekday() == 5
+    
     def is_holiday(self, date_obj):
         """Check if a date is a German holiday"""
         return date_obj in self.german_holidays
@@ -128,6 +232,10 @@ class CalendarDialog:
     def is_sunday_or_holiday(self, date_obj):
         """Check if a date is Sunday or a German holiday"""
         return self.is_sunday(date_obj) or self.is_holiday(date_obj)
+    
+    def is_weekend_or_holiday(self, date_obj):
+        """Check if a date is weekend (Saturday/Sunday) or a German holiday"""
+        return self.is_saturday(date_obj) or self.is_sunday(date_obj) or self.is_holiday(date_obj)
         
     def create_calendar(self):
         # Main container
@@ -146,8 +254,7 @@ class CalendarDialog:
         
         self.month_label = ttk.Label(nav_frame, 
                                    text=f"{calendar.month_name[self.month_var.get()]} {self.year_var.get()}",
-                                   font=('Segoe UI', 10, 'bold'),
-                                   foreground='#333333')
+                                   font=('Segoe UI', 10, 'bold'))
         self.month_label.pack(side=tk.LEFT, expand=True)
         
         ttk.Button(nav_frame, text="▶", style='Calendar.Nav.TButton',
@@ -157,18 +264,26 @@ class CalendarDialog:
         self.cal_frame = ttk.Frame(main_frame)
         self.cal_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Days header - highlight Sunday in red
+        # Days header - highlight Saturday in orange and Sunday in red
         days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         for i, day in enumerate(days):
-            color = '#e74c3c' if day == 'Sunday' else '#333333'
-            ttk.Label(self.cal_frame, 
+            color = None
+            if day == 'Sunday':
+                color = '#e74c3c'  # Red
+            elif day == 'Saturday':
+                color = '#f39c12'  # Orange
+                
+            label = ttk.Label(self.cal_frame, 
                      text=day[:3].upper(), 
                      font=('Segoe UI', 9, 'bold'),
-                     foreground=color,
-                     background='white',
-                     anchor='center').grid(
-                row=0, column=i, padx=2, pady=2, sticky='ew')
-            self.cal_frame.columnconfigure(i, weight=1)
+                     anchor='center')
+            if color:
+                label.configure(foreground=color)
+            label.grid(row=0, column=i, padx=1, pady=2, sticky='ew')
+            self.cal_frame.columnconfigure(i, weight=1, minsize=45)  # Ensure minimum column width
+        
+        for i in range(1, 7):  # Rows 1-6 for calendar weeks
+            self.cal_frame.rowconfigure(i, weight=1)
         
         self.draw_calendar()
         
@@ -199,47 +314,125 @@ class CalendarDialog:
                 if day == 0:
                     # Empty space for days not in current month
                     ttk.Label(self.cal_frame, text="").grid(
-                        row=week_num, column=day_num, padx=2, pady=2)
+                        row=week_num, column=day_num, padx=1, pady=2)
                     continue
                 
                 current_date = date(self.year_var.get(), self.month_var.get(), day)
                 today = date.today()
                 
-                # Determine button style based on conditions
-                style = 'Calendar.Day.TButton'
-                
+                # Determine colors based on conditions
                 is_today = current_date == today
                 is_selected = current_date == self.selected_date
-                is_holiday_or_sunday = self.is_sunday_or_holiday(current_date)
+                is_holiday = self.is_holiday(current_date)
+                is_sunday = self.is_sunday(current_date)
+                is_saturday = self.is_saturday(current_date)
                 
-                # Priority order: Selected > Today > Holiday/Sunday > Regular
-                if is_selected and is_holiday_or_sunday:
-                    style = 'Calendar.SelectedHoliday.TButton'
+                # Default colors
+                bg_color = None
+                fg_color = '#333333'
+                font_weight = 'normal'
+                
+                # Priority order: Selected > Weekend/Holiday colors > Today > Regular
+                if is_selected and is_sunday:
+                    bg_color = '#c0392b'  # Darker red for selected Sunday
+                    fg_color = 'white'
+                    font_weight = 'bold'
+                elif is_selected and is_saturday:
+                    bg_color = '#d68910'  # Darker orange for selected Saturday
+                    fg_color = 'white'
+                    font_weight = 'bold'
+                elif is_selected and is_holiday:
+                    bg_color = '#9b59b6'  # Purple for selected holiday
+                    fg_color = 'white'
+                    font_weight = 'bold'
                 elif is_selected:
-                    style = 'Calendar.Selected.TButton'
-                elif is_today and is_holiday_or_sunday:
-                    style = 'Calendar.TodayHoliday.TButton'
+                    bg_color = '#3a7bc8'  # Dark blue for selected regular day
+                    fg_color = 'white'
+                    font_weight = 'bold'
+                elif is_sunday:
+                    bg_color = '#e74c3c'  # Red for all Sundays
+                    fg_color = 'white'
+                    font_weight = 'bold'
+                elif is_saturday:
+                    bg_color = '#f39c12'  # Orange for all Saturdays
+                    fg_color = 'white'
+                    font_weight = 'bold'
+                elif is_holiday:
+                    bg_color = '#e74c3c'  # Red for holidays (same as Sunday)
+                    fg_color = 'white'
+                    font_weight = 'bold'
                 elif is_today:
-                    style = 'Calendar.Today.TButton'
-                elif is_holiday_or_sunday:
-                    style = 'Calendar.Holiday.TButton'
+                    bg_color = '#4a90e2'  # Blue for today (only if not weekend/holiday)
+                    fg_color = 'white'
+                    font_weight = 'bold'
                 
-                btn = ttk.Button(self.cal_frame, 
-                                text=str(day), 
-                                style=style,
-                                command=lambda d=day: self.day_clicked(d))
-                
-                # Add tooltip for holidays
-                if self.is_holiday(current_date):
-                    holiday_name = self.german_holidays.get(current_date, "Holiday")
-                    self.create_tooltip(btn, holiday_name)
-                elif self.is_sunday(current_date):
-                    self.create_tooltip(btn, "Sonntag")
-                
-                btn.grid(row=week_num, column=day_num, padx=2, pady=2, sticky='nsew')
+                # Create the day widget
+                if bg_color:
+                    # Create a colored frame for special days
+                    day_frame = tk.Frame(self.cal_frame, 
+                                       bg=bg_color, 
+                                       relief='raised',
+                                       borderwidth=1,
+                                       cursor='hand2')
+                    day_frame.grid(row=week_num, column=day_num, padx=1, pady=2, sticky='nsew')
+                    
+                    # Add label inside frame
+                    day_label = tk.Label(day_frame,
+                                       text=str(day),
+                                       bg=bg_color,
+                                       fg=fg_color,
+                                       font=('Segoe UI', 8, font_weight),
+                                       cursor='hand2')
+                    day_label.pack(expand=True, fill='both', padx=4, pady=4)
+                    
+                    # Bind click events to both frame and label
+                    day_frame.bind('<Button-1>', lambda e, d=day: self.day_clicked(d))
+                    day_label.bind('<Button-1>', lambda e, d=day: self.day_clicked(d))
+                    
+                    # Add tooltip for special days
+                    if is_holiday:
+                        holiday_name = self.german_holidays.get(current_date, "Holiday")
+                        self.create_tooltip_for_widget(day_frame, holiday_name)
+                        self.create_tooltip_for_widget(day_label, holiday_name)
+                    elif is_sunday:
+                        self.create_tooltip_for_widget(day_frame, "Sunday")
+                        self.create_tooltip_for_widget(day_label, "Sunday")
+                    elif is_saturday:
+                        self.create_tooltip_for_widget(day_frame, "Saturday")
+                        self.create_tooltip_for_widget(day_label, "Saturday")
+                        
+                else:
+                    # Use regular button for normal days
+                    btn = ttk.Button(self.cal_frame, 
+                                    text=str(day), 
+                                    style='Calendar.Day.TButton',
+                                    command=lambda d=day: self.day_clicked(d))
+                    btn.grid(row=week_num, column=day_num, padx=1, pady=2, sticky='nsew')
     
     def create_tooltip(self, widget, text):
         """Create a simple tooltip for holidays"""
+        def on_enter(event):
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            
+            label = tk.Label(tooltip, text=text, 
+                           background='#333333', foreground='white',
+                           font=('Segoe UI', 8), padx=5, pady=2)
+            label.pack()
+            
+            widget.tooltip = tooltip
+        
+        def on_leave(event):
+            if hasattr(widget, 'tooltip'):
+                widget.tooltip.destroy()
+                del widget.tooltip
+        
+        widget.bind('<Enter>', on_enter)
+        widget.bind('<Leave>', on_leave)
+    
+    def create_tooltip_for_widget(self, widget, text):
+        """Create a simple tooltip for any widget"""
         def on_enter(event):
             tooltip = tk.Toplevel()
             tooltip.wm_overrideredirect(True)
