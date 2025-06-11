@@ -35,6 +35,25 @@
 ![Reports](https://live.staticflickr.com/65535/54580558236_fc031c5de7_c.jpg)
 *Professional PDF reports with customizable templates and multi-language support*
 
+#### Sample Report Output
+
+##### German Language Report
+![Reports](https://live.staticflickr.com/65535/54580592186_8b630ce1d2_c.jpg)
+*Monthly time report in German - "Monatlicher Arbeitszeitbericht" with complete company and employee information*
+
+##### English Language Report
+![Reports](https://live.staticflickr.com/65535/54580592176_3d5f9b9c01_c.jpg)
+*Monthly time report in English with identical data structure and professional formatting*
+
+##### Report Features Demonstrated:
+
+- Multi-language Support: Complete German and English localization
+- Professional Layout: Clean, structured format suitable for official documentation
+- Comprehensive Data: Company info, employee details, work hours, vacation/sick days
+- Detailed Time Records: Day-by-day breakdown with start/end times and break tracking
+- Summary Statistics: Monthly totals for working hours, vacation, and sick leave
+- Compliance Ready: Format suitable for German labor law documentation requirements
+
 ### Settings & Configuration
 ![Settings](https://live.staticflickr.com/65535/54580878870_65c19b4b5e_c.jpg)
 *Comprehensive settings management with company branding and theme customization*

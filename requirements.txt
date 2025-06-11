@@ -1,7 +1,15 @@
+altgraph==0.17.4
 chardet==5.2.0
 holidays==0.74
+packaging==25.0
 pillow==11.2.1
+pyinstaller==6.14.1
+pyinstaller-hooks-contrib==2025.5
 python-dateutil==2.9.0.post0
 reportlab==4.4.1
+setuptools==80.9.0
 six==1.17.0
+stdeb==0.10.0
 tk==0.1.0
+TKinterModernThemes==1.10.4
+ttkthemes==3.2.2
