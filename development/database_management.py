@@ -318,7 +318,7 @@ class TimeTracker:
         }
         
         # For work records, calculate time values
-        print(f"NOW CHECKING Record Time:\n\trecord_type:'{record_type}'") #TODO: remove
+        print(f"NOW CHECKING Record Time:\n\trecord_type:'{record_type}'")
         if record_type == 'work' and start_times and end_times:
             # Ensure we have valid start/end time pairs (max 3)
             start_times = (start_times or [])[:3]
@@ -598,7 +598,7 @@ class TimeTracker:
             if calculated_values['hours_worked'] > standard_daily_hours:
                 calculated_values['overtime_hours'] = calculated_values['hours_worked'] - standard_daily_hours
             
-            # Update time fields (pad with None if less than 3 entries) # TODO: this is fucked up, I want the user to enter the time one by one, in case he want to enter more than 3 enterences, he gets an error, and this can't be processed.
+            # Update time fields (pad with None if less than 3 entries)
             time_fields = [None] * 6  # 3 start times + 3 end times
             if start_times:
                 for i, time_val in enumerate(start_times[:3]):

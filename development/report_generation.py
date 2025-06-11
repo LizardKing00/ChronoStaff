@@ -64,11 +64,10 @@ class ReportManager:
                 row = cursor.fetchone()
 
                 if row:
-                    # Map database template values to our constants - FIXED MAPPING
+                    # Map database template values to our constants
                     db_template = row[1] or 'default'  # Default to 'default' if None
                     print(f"Database template value: '{db_template}'")  # Debug print
 
-                    # CORRECTED mapping logic
                     if db_template == 'default':
                         template = self.TEMPLATE_DEFAULT
                     elif db_template == 'color':
@@ -76,7 +75,6 @@ class ReportManager:
                     elif db_template == 'black-white':
                         template = self.TEMPLATE_LATEX_BW
                     else:
-                        # Fallback to default for unknown values
                         template = self.TEMPLATE_DEFAULT
                         print(f"Warning: Unknown template value '{db_template}', using default")
 
@@ -804,7 +802,6 @@ class ReportManager:
         with self.connect_db() as conn:
             cursor = conn.cursor()
             
-            # Map our template constants to database values
             db_template_value = 'color'  # default
             if template_type == self.TEMPLATE_LATEX_BW:
                 db_template_value = 'black-white'
@@ -1026,8 +1023,6 @@ class ReportManager:
     def get_time_records(self, employee_id: int, year: int, month: int) -> List[Dict]:
         """
         Retrieve time records for a specific employee and month.
-        Works with the updated schema that has multiple start/end time pairs.
-        Now properly handles multi-period days by showing overall timespan and correct breaks.
 
         Args:
             employee_id: Employee ID from the database

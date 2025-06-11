@@ -307,7 +307,6 @@ class EmployeeTimeApp:
         ttk.Button(calendar_frame, text="Calendar", width=12, command=self.open_calendar).pack(side=tk.LEFT, padx=5)
         ttk.Button(calendar_frame, text="Today", width=8, command=self.set_to_today).pack(side=tk.LEFT, padx=5)
 
-        # Time entries frame (new section for multiple start/end times)
         time_entries_frame = ttk.LabelFrame(entry_frame, text="Work Time Periods (Max 3)")
         time_entries_frame.pack(fill=tk.X, padx=10, pady=5)
 
@@ -372,15 +371,12 @@ class EmployeeTimeApp:
         records_frame = ttk.LabelFrame(main_container, text="Time Records")
         records_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Treeview and scrollbars should all use grid within their container
         tree_container = ttk.Frame(records_frame)
         tree_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # Updated columns to match new database schema
         time_columns = ('Date', 'Time Periods', 'Present', 'Worked', 'Breaks', 'Overtime', 'Type', 'Compliance', 'Notes')
         self.time_tree = ttk.Treeview(tree_container, columns=time_columns, show='headings', height=12)
 
-        # Updated column widths for new data
         time_widths = {
             'Date': 80, 
             'Time Periods': 150,  # Shows start-end time ranges (e.g., "09:00-12:00, 13:00-17:00")
@@ -478,7 +474,6 @@ class EmployeeTimeApp:
         self.year_spinbox = tk.Spinbox(row2, from_=2020, to=2030, textvariable=self.report_year_var, width=8)
         self.year_spinbox.pack(side=tk.LEFT, padx=(5, 20))
         
-        # Report buttons (with actual functionality)
         btn_container = ttk.Frame(row2)
         btn_container.pack(side=tk.RIGHT)
         
@@ -490,7 +485,6 @@ class EmployeeTimeApp:
         
         ttk.Button(btn_container, text="Clear", command=self.clear_report).pack(side=tk.LEFT, padx=5)
         
-        # Progress bar (new addition)
         self.progress_frame = ttk.Frame(controls_frame)
         self.progress_frame.pack(fill=tk.X, padx=10, pady=5)
         
@@ -522,11 +516,11 @@ class EmployeeTimeApp:
         self.last_pdf_path = None
     
     def create_settings_tab(self):
-        """Create settings tab with theme support - Fixed gray area issue"""
+        """Create settings tab with theme support"""
         settings_frame = ttk.Frame(self.notebook)
         self.notebook.add(settings_frame, text="Settings")
 
-        # Create scrollable frame for all settings - FIXED CANVAS WIDTH
+        # Create scrollable frame for all settings
         canvas = tk.Canvas(settings_frame)
         scrollbar = ttk.Scrollbar(settings_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
@@ -550,7 +544,7 @@ class EmployeeTimeApp:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Main container - content will now fill the available width
+        # Main container
         main_container = ttk.Frame(scrollable_frame)
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
@@ -970,7 +964,7 @@ class EmployeeTimeApp:
         self.update_language_preview()
 
     def create_theme_settings_section(self, parent):
-        """Add this to your settings tab - Fixed version"""
+        """Theme settings"""
         # Theme Settings - Clean & Left-aligned
         theme_frame = ttk.LabelFrame(parent, text="Application Theme")
         theme_frame.pack(fill=tk.X, pady=(0, 20))
@@ -993,7 +987,6 @@ class EmployeeTimeApp:
             )
             theme_combo.pack(side=tk.LEFT, padx=(10, 20))
             
-            # Status - no apply button needed
             status_label = ttk.Label(
                 theme_content, 
                 text="✅ Auto-apply enabled", 
@@ -1025,7 +1018,6 @@ class EmployeeTimeApp:
  # =============================================================================
     
     def refresh_employee_list(self):
-        """Refresh the employee list display - with formatted DB_ID"""
         print("=== REFRESHING EMPLOYEE LIST ===")
 
         # Clear existing items
@@ -1052,7 +1044,6 @@ class EmployeeTimeApp:
 
                 status = "Active" if emp[10] else "Inactive"
 
-                # FORMAT the database ID as "DB_ID: {number}"
                 formatted_db_id = f"{emp[0]}"
 
                 values_to_insert = (
@@ -1083,7 +1074,7 @@ class EmployeeTimeApp:
         self.emp_combo['values'] = emp_names
     
     def add_employee_dialog(self):
-        """Show dialog to add new employee with strict ID validation"""
+        """Show dialog to add new employee"""
         dialog = tk.Toplevel(self.root)
         dialog.title("Add Employee")
         dialog.geometry("400x400")
@@ -1129,7 +1120,6 @@ class EmployeeTimeApp:
             id_input = id_var.get().strip()
 
             try:
-                # Convert to integer (will raise ValueError if invalid)
                 id_num = int(id_input)
 
                 # Take last 4 digits if longer than 4
@@ -1137,7 +1127,7 @@ class EmployeeTimeApp:
                     id_num = id_num % 10000
                     messagebox.showwarning("Notice", f"Using last 4 digits: {id_num:04d}")
 
-                employee_id = f"{id_num:04d}"  # Format as 4-digit string
+                employee_id = f"{id_num:04d}"
 
             except ValueError:
                 messagebox.showerror("Error", "ID must be a number (digits only)")
@@ -1158,10 +1148,9 @@ class EmployeeTimeApp:
                 messagebox.showerror("Error", "Name is required!")
                 return
 
-            # All validations passed - save employee
             success = self.employee_manager.add_employee(
                 name_var.get().strip(),
-                employee_id,  # Formatted 4-digit string
+                employee_id,
                 pos_var.get().strip(),
                 rate_var.get(),
                 email_var.get().strip(),
@@ -1191,7 +1180,7 @@ class EmployeeTimeApp:
         id_entry.configure(validate='key', validatecommand=vcmd)
 
     def edit_employee_dialog(self):
-        """Show dialog to edit existing employee - with DB_ID parsing"""
+        """Show dialog to edit existing employee"""
         print("=== EDIT EMPLOYEE DIALOG STARTED ===")
 
         selection = self.emp_tree.selection()
@@ -1264,7 +1253,6 @@ class EmployeeTimeApp:
         # Create dialog window
         print("Creating dialog window...")
         dialog = tk.Toplevel(self.root)
-        # Show both database ID and employee_id in title for clarity
         dialog.title(f"Edit Employee {employee[2]} (DB ID: {database_id})")
         dialog.geometry("400x450")
         dialog.transient(self.root)
@@ -1316,7 +1304,6 @@ class EmployeeTimeApp:
             ttk.Entry(dialog, textvariable=name_var, width=30).grid(row=row, column=1, padx=10, pady=5)
             row += 1
 
-            # Employee ID field (read-only) - show the actual employee_id, not database id
             print(f"  Creating employee ID field at row {row}")
             ttk.Label(dialog, text="Employee ID:").grid(row=row, column=0, sticky='w', padx=10, pady=5)
             ttk.Label(dialog, text=employee[2], foreground='blue').grid(row=row, column=1, sticky='w', padx=10, pady=5)
@@ -1538,9 +1525,6 @@ class EmployeeTimeApp:
             messagebox.showerror("Error", "Invalid selection - no data found")
             return
     
-        # EXTRACT database ID from TreeView
-        # If you're using the formatted version "DB_ID: 1", parse it
-        # If you're using just the number "1", use it directly
         first_column = item['values'][0]
         print(f"First column value: '{first_column}'")
         
@@ -1562,7 +1546,6 @@ class EmployeeTimeApp:
         print(f"Looking up employee in database with database ID: {database_id}")
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
-        #Search by database ID (id column) instead of employee_id
         cursor.execute("SELECT * FROM employees WHERE id = ?", (database_id,))
         employee = cursor.fetchone()
         print(f"Database query result: {employee}")
@@ -1571,7 +1554,6 @@ class EmployeeTimeApp:
         if not employee:
             print(f"ERROR: Employee with database ID {database_id} not found in database")
             
-            # Additional debugging - show what employees actually exist
             conn = self.db_manager.get_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT id, employee_id, name FROM employees")
@@ -1622,7 +1604,7 @@ class EmployeeTimeApp:
             ("Name:", employee[1]),
             ("Employee ID:", employee[2]),
             ("Position:", employee[3] if employee[3] else "N/A"),
-            ("Hourly Rate:", f"${employee[4]:.2f}" if employee[4] else "N/A"),
+            ("Hourly Rate:", f"€{employee[4]:.2f}" if employee[4] else "N/A"),
             ("Email:", employee[5] if employee[5] else "N/A"),
             ("Hire Date:", employee[6] if employee[6] else "N/A"),
             ("Status:", "Active" if employee[10] else "Inactive")
@@ -1643,12 +1625,11 @@ class EmployeeTimeApp:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
     
-        # Use database_id (employee[0]) for time_records queries
         print(f"Querying vacation days for database_id: {database_id}")
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
             WHERE employee_id = ? AND date >= ? AND record_type = 'vacation'
-        ''', (database_id, start_of_year))  # Use database_id, not employee[0]
+        ''', (database_id, start_of_year)) 
         vacation_used = cursor.fetchone()[0]
         print(f"Vacation days used: {vacation_used}")
     
@@ -1656,7 +1637,7 @@ class EmployeeTimeApp:
         cursor.execute('''
             SELECT COUNT(*) FROM time_records 
             WHERE employee_id = ? AND date >= ? AND record_type = 'sick'
-        ''', (database_id, start_of_year))  # Use database_id, not employee[0]
+        ''', (database_id, start_of_year)) 
         sick_used = cursor.fetchone()[0]
         print(f"Sick days used: {sick_used}")
         conn.close()
@@ -1685,7 +1666,6 @@ class EmployeeTimeApp:
         current_month = datetime.now().month
         
         print("Calculating monthly and yearly summaries...")
-        # Use database_id for summary calculations
         monthly_summary = self.time_tracker.calculate_monthly_summary(database_id, current_year, current_month)
         yearly_summary = self.time_tracker.calculate_yearly_summary(database_id, current_year)
         
@@ -1771,7 +1751,7 @@ class EmployeeTimeApp:
         self.personal_info_values['Name'].config(text=employee[1])
         self.personal_info_values['Employee ID'].config(text=employee[2])
         self.personal_info_values['Position'].config(text=employee[3] if employee[3] else "N/A")
-        self.personal_info_values['Hourly Rate'].config(text=f"${employee[4]:.2f}" if employee[4] else "N/A")
+        self.personal_info_values['Hourly Rate'].config(text=f"€{employee[4]:.2f}" if employee[4] else "N/A")
         self.personal_info_values['Email'].config(text=employee[5] if employee[5] else "N/A")
         self.personal_info_values['Hire Date'].config(text=employee[6] if employee[6] else "N/A")
         self.personal_info_values['Status'].config(
@@ -1849,7 +1829,7 @@ class EmployeeTimeApp:
  # =============================================================================
     
     def on_employee_select(self, event):
-        """Handle employee selection - Fixed to properly extract employee info"""
+        """Handle employee selection"""
         selected = self.emp_var.get()
         if not selected:
             self.selected_employee = None
@@ -1894,7 +1874,7 @@ class EmployeeTimeApp:
             self.selected_employee_id = None
 
     def load_time_records_data(self):
-        """Load time records data from database and populate the treeview - Fixed version"""
+        """Load time records data from database and populate the treeview"""
         print("=== load_time_records_data STARTED ===")
 
         # Check if we have a selected employee
@@ -2076,7 +2056,7 @@ class EmployeeTimeApp:
         self.preview_text.config(state=tk.DISABLED)
 
     def add_time_entry(self):
-        """Add time entry for selected employee - Reference implementation"""
+        """Add time entry for selected employee"""
         if not self.selected_employee:
             messagebox.showwarning("Warning", "Please select an employee first.")
             return
@@ -2190,14 +2170,13 @@ class EmployeeTimeApp:
         self.preview_time_calculation()
 
     def delete_time_entry(self):
-        """Delete selected time entry from database (single record only)"""
+        """Delete selected time entry from database"""
         selected_items = self.time_tree.selection()
 
         if not selected_items:
             messagebox.showwarning("Warning", "Please select a time entry to delete")
             return
 
-        # Only process the first selected item to ensure single deletion
         first_selected = selected_items[0]
 
         try:
@@ -2217,11 +2196,9 @@ class EmployeeTimeApp:
             if not confirm:
                 return
 
-            # Delete from database with precise matching
             conn = self.db_manager.get_connection()
             cursor = conn.cursor()
 
-            # First verify we have exactly one matching record
             cursor.execute('''
                 SELECT COUNT(*) FROM time_records 
                 WHERE employee_id = ? AND date = ?
@@ -2384,7 +2361,7 @@ class EmployeeTimeApp:
  # =============================================================================
     
     def update_report_employee_combo(self):
-        """Update the employee combo box with available employees - Uses ReportManager"""
+        """Update the employee combo box with available employees"""
         if not self.report_manager:
             self.report_text.delete(1.0, tk.END)
             self.report_text.insert(tk.END, "⚠️  Report manager not initialized.\n")
@@ -2410,7 +2387,7 @@ class EmployeeTimeApp:
             self.report_text.insert(tk.END, f"Error loading employees: {e}\n")    
     
     def on_report_employee_selected(self, event):
-        """Handle employee selection to show available data months - Uses ReportManager"""
+        """Handle employee selection to show available data months"""
         if not self.report_manager:
             return
 
@@ -2424,7 +2401,6 @@ class EmployeeTimeApp:
             if selected_index >= 0 and selected_index < len(self.employees_data):
                 employee = self.employees_data[selected_index]
 
-                # Use ReportManager instead of direct database access
                 months = self.report_manager.get_available_months_for_employee(employee['id'])
 
                 if months:
@@ -2503,9 +2479,8 @@ class EmployeeTimeApp:
             messagebox.showerror("Error", f"Failed to start report generation: {e}")    
     
     def _generate_report_worker(self, employee_id, year, month):
-        """Worker thread for report generation - Uses ReportManager"""
+        """Worker thread for report generation"""
         try:
-            # Use ReportManager methods instead of duplicating logic
             employee_info = self.report_manager.get_employee_info(employee_id)
             time_records = self.report_manager.get_time_records(employee_id, year, month)
             summary = self.report_manager.calculate_summary(time_records)
@@ -2623,7 +2598,6 @@ class EmployeeTimeApp:
             month_name = calendar.month_name[month]
             default_filename = f"TimeReport_{employee_name}_{month_name}_{year}.pdf"
 
-            # Use initialdir instead of initialname, and set up the path properly
             default_dir = os.path.expanduser("~/Documents")  # Default to Documents folder
 
             # Ask user for save location
@@ -2635,7 +2609,6 @@ class EmployeeTimeApp:
                 initialdir=default_dir
             )
 
-            # If user selected a path but didn't specify filename, append default filename
             if file_path:
                 # Check if the selected path ends with .pdf, if not append the default filename
                 if not file_path.lower().endswith('.pdf'):
@@ -2660,9 +2633,8 @@ class EmployeeTimeApp:
             messagebox.showerror("Error", f"Failed to start PDF export: {e}")
 
     def _export_pdf_worker(self, employee_id, year, month, file_path):
-        """Worker thread for PDF export - Uses ReportManager"""
+        """Worker thread for PDF export"""
         try:
-            # Use ReportManager's PDF generation method
             pdf_path = self.report_manager.generate_pdf_report(
                 employee_id=employee_id,
                 year=year,
@@ -2811,7 +2783,7 @@ class EmployeeTimeApp:
             messagebox.showerror("Error", f"Error saving settings: {e}")
 
     def load_settings(self):
-        """Load settings from database using SettingsManager - with corrected template mapping"""
+        """Load settings from database using SettingsManager"""
         try:
             # Load all settings
             all_settings = self.settings_manager.load_all_settings()
@@ -2871,7 +2843,6 @@ class EmployeeTimeApp:
             # Load report settings
             report = all_settings.get('report', {})
 
-            # Set language using the correct variable name
             if hasattr(self, 'language_var'):
                 current_lang = report.get('lang', 'en')
                 if current_lang == 'de':
@@ -2904,7 +2875,6 @@ class EmployeeTimeApp:
 
                 print(f"Template loading conversion: {current_db_template} -> {gui_template_id} -> {target_display}")
 
-                # Find matching choice in the combo box (with availability suffix)
                 for choice in self.template_mapping.keys():
                     if choice.startswith(target_display):
                         self.template_display_var.set(choice)
@@ -3193,7 +3163,7 @@ class EmployeeTimeApp:
 
             item = self.emp_tree.item(selection[0])
 
-            print("Treeview item values:", item['values'])  # For debugging TODO: remove
+            print("Treeview item values:", item['values'])
 
             if not item['values'] or len(item['values']) < 1:
                 return None
@@ -3260,7 +3230,7 @@ class EmployeeTimeApp:
             messagebox.showerror("Theme Error", f"Could not apply theme: {e}")
 
 # =============================================================================
-# MAIN APPLICATION ENTRY POINT                                                  #TODO:  later edit
+# MAIN APPLICATION ENTRY POINT                                                  #TODO:  edit later
 # =============================================================================
 
 if __name__ == "__main__":
